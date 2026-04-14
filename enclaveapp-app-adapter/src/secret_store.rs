@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
@@ -41,13 +42,15 @@ impl ReadOnlyEncryptedFileSecretStore {
 }
 
 pub struct EncryptedFileSecretStore {
+    app_name: String,
     dir: PathBuf,
-    storage: Box<dyn EncryptionStorage>,
+    storage: OnceLock<std::result::Result<Box<dyn EncryptionStorage>, String>>,
 }
 
 impl std::fmt::Debug for EncryptedFileSecretStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EncryptedFileSecretStore")
+            .field("app_name", &self.app_name)
             .field("dir", &self.dir)
             .finish()
     }
@@ -56,15 +59,11 @@ impl std::fmt::Debug for EncryptedFileSecretStore {
 impl EncryptedFileSecretStore {
     pub fn for_app(app_name: &str) -> Result<Self> {
         let dir = app_data_dir(app_name)?.join("secrets");
-        let storage = create_encryption_storage(StorageConfig {
+        Ok(Self {
             app_name: app_name.to_string(),
-            key_label: "adapter-secrets".to_string(),
-            access_policy: AccessPolicy::None,
-            extra_bridge_paths: Vec::new(),
-            keys_dir: None,
-        })?;
-
-        Ok(Self { dir, storage })
+            dir,
+            storage: OnceLock::new(),
+        })
     }
 
     fn path_for(&self, id: &BindingId) -> PathBuf {
@@ -73,6 +72,22 @@ impl EncryptedFileSecretStore {
 
     fn lock_path_for(&self, id: &BindingId) -> PathBuf {
         self.dir.join(format!("{}.lock", hash_id(id)))
+    }
+
+    fn storage(&self) -> Result<&dyn EncryptionStorage> {
+        match self.storage.get_or_init(|| {
+            create_encryption_storage(StorageConfig {
+                app_name: self.app_name.clone(),
+                key_label: "adapter-secrets".to_string(),
+                access_policy: AccessPolicy::None,
+                extra_bridge_paths: Vec::new(),
+                keys_dir: None,
+            })
+            .map_err(|error| error.to_string())
+        }) {
+            Ok(storage) => Ok(storage.as_ref()),
+            Err(error) => Err(AdapterError::Storage(error.clone())),
+        }
     }
 
     fn with_shared_lock<T>(
@@ -126,7 +141,7 @@ impl EncryptedFileSecretStore {
 impl SecretStore for EncryptedFileSecretStore {
     fn set(&self, id: &BindingId, secret: &str) -> Result<()> {
         self.with_exclusive_lock(id, |store| {
-            let ciphertext = store.storage.encrypt(secret.as_bytes())?;
+            let ciphertext = store.storage()?.encrypt(secret.as_bytes())?;
             let encoded = base64::engine::general_purpose::STANDARD.encode(ciphertext);
             let path = store.path_for(id);
             let temp_path = temp_path_for(&path);
@@ -150,7 +165,7 @@ impl SecretStore for EncryptedFileSecretStore {
             let ciphertext = base64::engine::general_purpose::STANDARD
                 .decode(encoded.trim())
                 .map_err(|error| AdapterError::Storage(error.to_string()))?;
-            let plaintext = self.storage.decrypt(&ciphertext)?;
+            let plaintext = self.storage()?.decrypt(&ciphertext)?;
             let value = String::from_utf8(plaintext)
                 .map_err(|error| AdapterError::Storage(error.to_string()))?;
             return Ok(Some(value));
@@ -166,7 +181,7 @@ impl SecretStore for EncryptedFileSecretStore {
             let ciphertext = base64::engine::general_purpose::STANDARD
                 .decode(encoded.trim())
                 .map_err(|error| AdapterError::Storage(error.to_string()))?;
-            let plaintext = store.storage.decrypt(&ciphertext)?;
+            let plaintext = store.storage()?.decrypt(&ciphertext)?;
             let value = String::from_utf8(plaintext)
                 .map_err(|error| AdapterError::Storage(error.to_string()))?;
             Ok(Some(value))

@@ -299,8 +299,55 @@ pub fn token_source_display(record: &BindingRecord) -> Result<Option<String>> {
     Ok(Some(display_legacy_token_source_spec(spec)?))
 }
 
+pub fn token_source_display_for_listing<S>(
+    record: &BindingRecord,
+    secret_store: &S,
+) -> Result<Option<String>>
+where
+    S: SecretStore,
+{
+    match binding_token_source(record, secret_store)? {
+        Some(BindingTokenSource::Command { command, .. }) => {
+            let tokens =
+                shlex::split(&command).ok_or_else(|| anyhow!("invalid token source command"))?;
+            let token = tokens
+                .first()
+                .ok_or_else(|| anyhow!("token source command is empty"))?;
+            let name = Path::new(token)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("command");
+            Ok(Some(format!("command:{name}#{}", command_handle(&command))))
+        }
+        Some(BindingTokenSource::Provider {
+            provider, handle, ..
+        }) => Ok(Some(provider_display(&provider, handle.as_deref()))),
+        None => Ok(None),
+    }
+}
+
 pub fn token_source_display_for_spec(spec: &str) -> Result<String> {
     display_token_source_spec(spec)
+}
+
+pub fn normalize_cli_token_source_spec(spec: &str) -> Result<String> {
+    if spec.trim().is_empty() {
+        return Err(anyhow!("--token-source cannot be empty"));
+    }
+    if spec.starts_with(COMMAND_PREFIX) || spec.starts_with(PROVIDER_PREFIX) {
+        return Ok(spec.to_string());
+    }
+
+    let tokens = shlex::split(spec).ok_or_else(|| anyhow!("invalid token source: {spec}"))?;
+    let token = tokens
+        .first()
+        .ok_or_else(|| anyhow!("token source command is empty"))?;
+    if tokens.len() == 1 && !looks_like_path(token) {
+        return Err(anyhow!(
+            "ambiguous bare token source `{spec}`; use --token-command, --token-provider, or an explicit `command:...` / `provider:...` token source"
+        ));
+    }
+    Ok(spec.to_string())
 }
 
 pub fn token_source_supports_direct_acquisition(spec: &str) -> Result<bool> {
@@ -502,14 +549,21 @@ where
         });
     }
 
-    if let Some(state) = load_token_source_state_by_id(&record.id, secret_store, read_mode)? {
-        return Ok(Some(state));
+    if let Some(legacy) = record.metadata.get(LEGACY_TOKEN_SOURCE_KEY) {
+        if let Some(state) = load_token_source_state_by_id(&record.id, secret_store, read_mode)? {
+            return Ok(Some(state));
+        }
+        return binding_token_source_from_legacy_spec(legacy);
     }
 
-    let Some(legacy) = record.metadata.get(LEGACY_TOKEN_SOURCE_KEY) else {
-        return Ok(None);
-    };
-    binding_token_source_from_legacy_spec(legacy)
+    if let Some(_state) = load_token_source_state_by_id(&record.id, secret_store, read_mode)? {
+        return Err(anyhow!(
+            "binding `{}` has persisted token source state without binding metadata",
+            record.label
+        ));
+    }
+
+    Ok(None)
 }
 
 fn load_token_source_state<S>(
@@ -1500,6 +1554,32 @@ mod tests {
     }
 
     #[test]
+    fn normalize_cli_token_source_rejects_ambiguous_bare_single_token_specs() {
+        let error = normalize_cli_token_source_spec("sso-jwt").expect_err("ambiguous");
+        assert!(error.to_string().contains("ambiguous bare token source"));
+    }
+
+    #[test]
+    fn normalize_cli_token_source_accepts_explicit_provider_specs() {
+        assert_eq!(
+            normalize_cli_token_source_spec("provider:sso-jwt:corp/prod").expect("normalized"),
+            "provider:sso-jwt:corp/prod"
+        );
+    }
+
+    #[test]
+    fn normalize_cli_token_source_accepts_unambiguous_command_specs() {
+        assert_eq!(
+            normalize_cli_token_source_spec("/usr/local/bin/source-token").expect("normalized"),
+            "/usr/local/bin/source-token"
+        );
+        assert_eq!(
+            normalize_cli_token_source_spec("source-token --audience npm").expect("normalized"),
+            "source-token --audience npm"
+        );
+    }
+
+    #[test]
     fn provider_metadata_without_sidecar_is_reported_as_corrupt() {
         let secrets = MemorySecretStore::new();
         let mut record = binding_record();
@@ -2044,6 +2124,80 @@ mod tests {
         assert!(error
             .to_string()
             .contains("does not match its persisted token source state"));
+    }
+
+    #[test]
+    fn token_source_display_for_listing_reports_modern_metadata_without_state_as_corrupt() {
+        let secrets = MemorySecretStore::new();
+        let record = binding_record_with_provider("sso-jwt");
+
+        let error =
+            token_source_display_for_listing(&record, &secrets).expect_err("corrupt display");
+        assert!(error
+            .to_string()
+            .contains("persisted token source state is missing"));
+    }
+
+    #[test]
+    fn token_source_display_for_listing_reports_mismatched_state_as_corrupt() {
+        let secrets = MemorySecretStore::new();
+        let record = binding_record_with_provider("sso-jwt");
+        secrets
+            .set(
+                &token_source_state_id(&record.id),
+                &serde_json::to_string(&StoredTokenSourceState::Command {
+                    canonical: "/usr/bin/printf token".to_string(),
+                })
+                .expect("state"),
+            )
+            .expect("store state");
+
+        let error =
+            token_source_display_for_listing(&record, &secrets).expect_err("corrupt display");
+        assert!(error
+            .to_string()
+            .contains("does not match its persisted token source state"));
+    }
+
+    #[test]
+    fn token_source_display_for_listing_reports_orphan_sidecar_state_as_corrupt() {
+        let secrets = MemorySecretStore::new();
+        let record = binding_record();
+        secrets
+            .set(
+                &token_source_state_id(&record.id),
+                &serde_json::to_string(&StoredTokenSourceState::Command {
+                    canonical: "/usr/bin/printf token".to_string(),
+                })
+                .expect("state"),
+            )
+            .expect("store state");
+
+        let error =
+            token_source_display_for_listing(&record, &secrets).expect_err("corrupt display");
+        assert!(error
+            .to_string()
+            .contains("persisted token source state without binding metadata"));
+    }
+
+    #[test]
+    fn token_source_is_reacquirable_reports_orphan_sidecar_state_as_corrupt() {
+        let secrets = MemorySecretStore::new();
+        let record = binding_record();
+        secrets
+            .set(
+                &token_source_state_id(&record.id),
+                &serde_json::to_string(&StoredTokenSourceState::Command {
+                    canonical: "/usr/bin/printf token".to_string(),
+                })
+                .expect("state"),
+            )
+            .expect("store state");
+
+        let error = token_source_is_reacquirable(&record, &secrets).expect_err("corrupt state");
+        assert!(error
+            .to_string()
+            .contains("persisted token source state without binding metadata"));
     }
 
     fn binding_record() -> BindingRecord {

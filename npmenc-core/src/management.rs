@@ -7,11 +7,20 @@ use crate::provenance::has_any_install_provenance;
 use crate::registry_bindings::{
     default_registry_binding, normalize_registry_url_to_auth_key, RegistryBinding,
 };
-use crate::state_lock::with_state_lock;
+use crate::state_lock::{with_state_lock, with_state_lock_read_only};
 use crate::token_source::{
     clear_token_source_metadata, clear_token_source_state, prepare_token_source_metadata,
     restore_token_source_artifacts, snapshot_token_source_artifacts,
+    token_source_display_for_listing,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingListRow {
+    pub label: String,
+    pub target: String,
+    pub secret_env_var: String,
+    pub token_source_display: Option<String>,
+}
 
 pub fn store_binding_secret<B, S>(
     label: Option<&str>,
@@ -139,6 +148,27 @@ where
     let records = binding_store.list()?;
     validate_unique_auth_keys(&records)?;
     Ok(records)
+}
+
+pub fn list_binding_rows<B, S>(binding_store: &B, secret_store: &S) -> Result<Vec<BindingListRow>>
+where
+    B: BindingStore,
+    S: SecretStore,
+{
+    with_state_lock_read_only(|| {
+        let records = list_binding_records(binding_store)?;
+        records
+            .into_iter()
+            .map(|record| {
+                Ok(BindingListRow {
+                    label: record.label.clone(),
+                    target: record.target.clone(),
+                    secret_env_var: record.secret_env_var.clone(),
+                    token_source_display: token_source_display_for_listing(&record, secret_store)?,
+                })
+            })
+            .collect()
+    })
 }
 
 pub fn delete_binding_label<B, S>(label: &str, binding_store: &B, secret_store: &S) -> Result<bool>

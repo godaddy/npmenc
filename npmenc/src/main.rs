@@ -12,11 +12,11 @@ use enclaveapp_app_adapter::{
 };
 use npmenc_core::{
     acquire_secret_from_token_source, default_registry_binding, delete_binding_label,
-    install_userconfig, list_binding_records, normalize_registry_url_to_auth_key,
-    prepare_wrapped_invocation, prepare_wrapped_invocation_read_only, store_binding_secret,
-    token_provider_is_valid_name, token_source_display, token_source_display_for_spec,
-    token_source_supports_direct_acquisition, uninstall_userconfig, CommandKind, RegistryBinding,
-    WrapperInvocation,
+    install_userconfig, list_binding_rows, normalize_cli_token_source_spec,
+    normalize_registry_url_to_auth_key, prepare_wrapped_invocation,
+    prepare_wrapped_invocation_read_only, store_binding_secret, token_provider_is_valid_name,
+    token_source_display_for_spec, token_source_supports_direct_acquisition, uninstall_userconfig,
+    CommandKind, RegistryBinding, WrapperInvocation,
 };
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -426,11 +426,12 @@ fn upsert_binding_from_args(args: &TokenSetArgs, force_default_label: bool) -> R
 
 fn list_bindings() -> Result<()> {
     let binding_store = JsonFileBindingStore::for_app("npmenc")?;
-    for record in list_binding_records(&binding_store)? {
-        let token_source = token_source_display(&record)?.unwrap_or_else(|| "-".to_string());
+    let secret_store = EncryptedFileSecretStore::for_app("npmenc")?;
+    for row in list_binding_rows(&binding_store, &secret_store)? {
+        let token_source = row.token_source_display.unwrap_or_else(|| "-".to_string());
         println!(
             "{}\t{}\t{}\t{}",
-            record.label, record.target, record.secret_env_var, token_source
+            row.label, row.target, row.secret_env_var, token_source
         );
     }
     Ok(())
@@ -529,7 +530,7 @@ fn read_secret(binding: &RegistryBinding, args: &TokenSetArgs) -> Result<String>
 
 fn token_source_spec_from_args(args: &TokenSetArgs) -> Result<Option<String>> {
     if let Some(token_source) = &args.token_source {
-        return Ok(Some(token_source.clone()));
+        return Ok(Some(normalize_cli_token_source_spec(token_source)?));
     }
     if let Some(token_command) = &args.token_command {
         if token_command.trim().is_empty() {
