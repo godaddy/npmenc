@@ -1,0 +1,21 @@
+[package]
+name = "npmenc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "npm-specific core logic for npmenc and npxenc"
+
+[dependencies]
+anyhow = { workspace = true }
+dirs = { workspace = true }
+enclaveapp-app-adapter = { path = "../enclaveapp-app-adapter" }
+fs4 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+shlex = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

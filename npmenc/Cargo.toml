@@ -1,0 +1,19 @@
+[package]
+name = "npmenc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Direct-launch npm wrapper with secure secret delivery substrate"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+enclaveapp-app-adapter = { path = "../enclaveapp-app-adapter" }
+npmenc-core = { path = "../npmenc-core" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
