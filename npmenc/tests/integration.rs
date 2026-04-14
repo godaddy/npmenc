@@ -1002,7 +1002,7 @@ fn token_source_metadata_is_listed() {
             "token",
             "set",
             "--token-source",
-            "sso-jwt",
+            "provider:sso-jwt",
             "--secret",
             "stored_token",
         ])
@@ -1028,6 +1028,155 @@ fn token_source_metadata_is_listed() {
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     assert!(stdout.contains("default"));
     assert!(stdout.contains("sso-jwt"));
+}
+
+#[test]
+fn token_set_rejects_ambiguous_bare_token_source_specs() {
+    let dir = TempDir::new().expect("temp dir");
+    let config_root = dir.path().join("config");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .args(["token", "set", "--token-source", "sso-jwt"])
+        .output()
+        .expect("token set");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("ambiguous bare token source"));
+}
+
+#[test]
+fn token_list_fails_when_modern_token_source_metadata_is_corrupt() {
+    let dir = TempDir::new().expect("temp dir");
+    let config_root = dir.path().join("config");
+
+    let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .args([
+            "token",
+            "set",
+            "--secret",
+            "stored_token",
+            "--token-source",
+            "provider:sso-jwt",
+        ])
+        .output()
+        .expect("token set");
+    assert!(
+        set_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&set_output.stderr)
+    );
+
+    fs::remove_dir_all(config_root.join("npmenc/secrets")).expect("remove secrets");
+
+    let list_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .args(["token", "list"])
+        .output()
+        .expect("token list");
+
+    assert!(!list_output.status.success());
+    assert!(String::from_utf8_lossy(&list_output.stderr)
+        .contains("persisted token source state is missing"));
+}
+
+#[test]
+fn token_list_fails_for_orphan_sidecar_token_source_state() {
+    let dir = TempDir::new().expect("temp dir");
+    let config_root = dir.path().join("config");
+    let token_source = dir.path().join("source-token");
+    make_executable_script(&token_source, "#!/bin/sh\nprintf 'token_from_source\\n'\n");
+
+    let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .args([
+            "token",
+            "set",
+            "--token-source",
+            &token_source.to_string_lossy(),
+        ])
+        .output()
+        .expect("token set");
+    assert!(
+        set_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&set_output.stderr)
+    );
+
+    let bindings_path = config_root.join("npmenc/bindings.json");
+    fs::write(
+        &bindings_path,
+        r#"[{"id":"npm:default","label":"default","target":"https://registry.npmjs.org/","secret_env_var":"NPM_TOKEN_DEFAULT","metadata":{}}]"#,
+    )
+    .expect("rewrite bindings");
+
+    let list_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .args(["token", "list"])
+        .output()
+        .expect("token list");
+
+    assert!(!list_output.status.success());
+    assert!(String::from_utf8_lossy(&list_output.stderr)
+        .contains("persisted token source state without binding metadata"));
+}
+
+#[test]
+fn dry_run_fails_for_orphan_sidecar_token_source_state() {
+    let dir = TempDir::new().expect("temp dir");
+    let config_root = dir.path().join("config");
+    let token_source = dir.path().join("source-token");
+    let userconfig = dir.path().join("user.npmrc");
+    make_executable_script(&token_source, "#!/bin/sh\nprintf 'token_from_source\\n'\n");
+    fs::write(
+        &userconfig,
+        "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
+    )
+    .expect("write npmrc");
+
+    let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .args([
+            "token",
+            "set",
+            "--token-source",
+            &token_source.to_string_lossy(),
+        ])
+        .output()
+        .expect("token set");
+    assert!(
+        set_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&set_output.stderr)
+    );
+
+    let bindings_path = config_root.join("npmenc/bindings.json");
+    fs::write(
+        &bindings_path,
+        r#"[{"id":"npm:default","label":"default","target":"https://registry.npmjs.org/","secret_env_var":"NPM_TOKEN_DEFAULT","metadata":{}}]"#,
+    )
+    .expect("rewrite bindings");
+    fs::remove_file(
+        config_root.join(
+            "npmenc/secrets/045354396ae3d13dd5b0d7adfd7e1cee14c7b7b60e35b141e5d3f73fe2ca6fe8",
+        ),
+    )
+    .expect("remove binding secret");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
+        .env("NPMENC_CONFIG_DIR", &config_root)
+        .arg("--userconfig")
+        .arg(&userconfig)
+        .arg("--dry-run")
+        .arg("--")
+        .arg("--version")
+        .output()
+        .expect("dry run");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("persisted token source state without binding metadata"));
 }
 
 #[test]

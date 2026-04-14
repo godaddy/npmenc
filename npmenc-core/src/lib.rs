@@ -15,7 +15,8 @@ pub use command_kind::CommandKind;
 pub use config_path::resolve_effective_userconfig;
 pub use install::{install_userconfig, InstallReport};
 pub use management::{
-    binding_for_label, delete_binding_label, list_binding_records, store_binding_secret,
+    binding_for_label, delete_binding_label, list_binding_records, list_binding_rows,
+    store_binding_secret, BindingListRow,
 };
 pub use npmrc::{
     analyze_auth_entries, discover_scoped_auth_tokens, discover_unscoped_auth_tokens,
@@ -35,8 +36,9 @@ pub use registry_bindings::{
     derive_label_from_auth_key, normalize_registry_url_to_auth_key, unique_label, RegistryBinding,
 };
 pub use token_source::{
-    acquire_secret_from_token_source, clear_token_source_metadata, token_provider_is_supported,
-    token_provider_is_valid_name, token_source_display, token_source_display_for_spec,
+    acquire_secret_from_token_source, clear_token_source_metadata, normalize_cli_token_source_spec,
+    token_provider_is_supported, token_provider_is_valid_name, token_source_display,
+    token_source_display_for_listing, token_source_display_for_spec,
     token_source_supports_direct_acquisition,
 };
 pub use uninstall::{uninstall_userconfig, UninstallReport};
