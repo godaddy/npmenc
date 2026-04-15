@@ -18,6 +18,11 @@ use crate::binding_store::app_data_dir;
 use crate::error::{AdapterError, Result};
 use crate::types::BindingId;
 
+/// Placeholder value returned by read-only secret stores instead of the
+/// actual secret.  Consumers that need to distinguish "secret exists but
+/// cannot be read" from a real value should compare against this constant.
+pub const REDACTED_PLACEHOLDER: &str = "<redacted>";
+
 pub trait SecretStore {
     fn set(&self, id: &BindingId, secret: &str) -> Result<()>;
     fn get(&self, id: &BindingId) -> Result<Option<String>>;
@@ -216,7 +221,7 @@ impl SecretStore for ReadOnlyEncryptedFileSecretStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some("<redacted>".to_string()))
+        Ok(Some(REDACTED_PLACEHOLDER.to_string()))
     }
 
     fn delete(&self, id: &BindingId) -> Result<bool> {
@@ -325,5 +330,110 @@ mod tests {
         assert_eq!(store.get(&id).expect("get"), Some("token".to_string()));
         assert!(store.delete(&id).expect("delete"));
         assert_eq!(store.get(&id).expect("get"), None);
+    }
+
+    #[test]
+    fn redacted_placeholder_constant_is_not_empty() {
+        assert!(!REDACTED_PLACEHOLDER.is_empty());
+    }
+
+    #[test]
+    fn redacted_placeholder_is_recognizable() {
+        // The placeholder should be a clearly non-secret sentinel value
+        assert_eq!(REDACTED_PLACEHOLDER, "<redacted>");
+    }
+
+    #[test]
+    fn read_only_store_returns_redacted_for_existing_secret() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let secrets_dir = dir.path().join("secrets");
+        fs::create_dir_all(&secrets_dir).expect("mkdir");
+
+        let store = ReadOnlyEncryptedFileSecretStore {
+            dir: secrets_dir.clone(),
+        };
+        let id = BindingId::new("npm:test");
+        let secret_path = store.path_for(&id);
+
+        // Write some dummy ciphertext so the file exists
+        fs::write(&secret_path, "dummy-encrypted-data").expect("write");
+
+        let result = store.get(&id).expect("get");
+        assert_eq!(result, Some(REDACTED_PLACEHOLDER.to_string()));
+    }
+
+    #[test]
+    fn read_only_store_returns_none_when_no_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let secrets_dir = dir.path().join("secrets");
+        fs::create_dir_all(&secrets_dir).expect("mkdir");
+
+        let store = ReadOnlyEncryptedFileSecretStore { dir: secrets_dir };
+        let id = BindingId::new("npm:nonexistent");
+
+        let result = store.get(&id).expect("get");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_only_store_returns_none_when_dir_missing() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let secrets_dir = dir.path().join("does-not-exist");
+
+        let store = ReadOnlyEncryptedFileSecretStore { dir: secrets_dir };
+        let id = BindingId::new("npm:whatever");
+
+        let result = store.get(&id).expect("get");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_only_store_set_returns_error() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = ReadOnlyEncryptedFileSecretStore {
+            dir: dir.path().to_path_buf(),
+        };
+        let id = BindingId::new("npm:test");
+
+        let result = store.set(&id, "secret");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_only_store_delete_returns_error() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = ReadOnlyEncryptedFileSecretStore {
+            dir: dir.path().to_path_buf(),
+        };
+        let id = BindingId::new("npm:test");
+
+        let result = store.delete(&id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn memory_store_get_nonexistent_returns_none() {
+        let store = MemorySecretStore::new();
+        let id = BindingId::new("npm:nonexistent");
+
+        assert_eq!(store.get(&id).expect("get"), None);
+    }
+
+    #[test]
+    fn memory_store_delete_nonexistent_returns_false() {
+        let store = MemorySecretStore::new();
+        let id = BindingId::new("npm:nonexistent");
+
+        assert!(!store.delete(&id).expect("delete"));
+    }
+
+    #[test]
+    fn memory_store_set_overwrites() {
+        let store = MemorySecretStore::new();
+        let id = BindingId::new("npm:default");
+
+        store.set(&id, "first").expect("set");
+        store.set(&id, "second").expect("set");
+        assert_eq!(store.get(&id).expect("get"), Some("second".to_string()));
     }
 }

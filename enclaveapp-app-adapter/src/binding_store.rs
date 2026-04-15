@@ -166,8 +166,21 @@ impl BindingStore for MemoryBindingStore {
     }
 }
 
+/// Default environment variable name used to override the config directory.
+const DEFAULT_CONFIG_DIR_ENV: &str = "NPMENC_CONFIG_DIR";
+
+/// Resolve the application data directory.
+///
+/// When `env_override` is `Some`, that environment variable name is checked
+/// first.  Otherwise the default `NPMENC_CONFIG_DIR` variable is consulted.
+/// Falls back to the platform-standard config directory.
 pub fn app_data_dir(app_name: &str) -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("NPMENC_CONFIG_DIR") {
+    app_data_dir_with_env(app_name, None)
+}
+
+pub fn app_data_dir_with_env(app_name: &str, env_override: Option<&str>) -> Result<PathBuf> {
+    let env_key = env_override.unwrap_or(DEFAULT_CONFIG_DIR_ENV);
+    if let Some(path) = std::env::var_os(env_key) {
         let dir = PathBuf::from(path).join(app_name);
         return Ok(dir);
     }
@@ -279,10 +292,14 @@ fn set_file_permissions(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::{LazyLock, Mutex};
 
     use tempfile::TempDir;
 
     use super::*;
+
+    /// Serialize env-var-mutating tests so they don't race.
+    static ENV_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn upserts_and_reads_records() {
@@ -316,5 +333,107 @@ mod tests {
         store.upsert(record.clone()).expect("upsert");
         assert_eq!(store.list().expect("list"), vec![record.clone()]);
         assert!(store.delete(&record.id).expect("delete"));
+    }
+
+    #[test]
+    fn app_data_dir_with_env_respects_override() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = TempDir::new().expect("temp dir");
+        let env_key = "NPMENC_TEST_OVERRIDE_1";
+        let previous = std::env::var_os(env_key);
+        std::env::set_var(env_key, dir.path());
+
+        let result = app_data_dir_with_env("test-app", Some(env_key));
+
+        match previous {
+            Some(val) => std::env::set_var(env_key, val),
+            None => std::env::remove_var(env_key),
+        }
+
+        assert_eq!(result.expect("ok"), dir.path().join("test-app"));
+    }
+
+    #[test]
+    fn app_data_dir_with_env_default_uses_npmenc_config_dir() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = TempDir::new().expect("temp dir");
+        let env_key = DEFAULT_CONFIG_DIR_ENV;
+        let previous = std::env::var_os(env_key);
+        std::env::set_var(env_key, dir.path());
+
+        let result = app_data_dir_with_env("test-app", None);
+
+        match previous {
+            Some(val) => std::env::set_var(env_key, val),
+            None => std::env::remove_var(env_key),
+        }
+
+        assert_eq!(result.expect("ok"), dir.path().join("test-app"));
+    }
+
+    #[test]
+    fn app_data_dir_with_env_falls_through_when_unset() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let env_key = "NPMENC_TEST_NONEXISTENT_VAR_BINDING";
+        let previous = std::env::var_os(env_key);
+        std::env::remove_var(env_key);
+
+        // Also ensure DEFAULT_CONFIG_DIR_ENV is unset so we fall through
+        let prev_default = std::env::var_os(DEFAULT_CONFIG_DIR_ENV);
+        std::env::remove_var(DEFAULT_CONFIG_DIR_ENV);
+
+        let result = app_data_dir_with_env("test-app", Some(env_key));
+
+        // Restore env vars
+        match previous {
+            Some(val) => std::env::set_var(env_key, val),
+            None => std::env::remove_var(env_key),
+        }
+        match prev_default {
+            Some(val) => std::env::set_var(DEFAULT_CONFIG_DIR_ENV, val),
+            None => std::env::remove_var(DEFAULT_CONFIG_DIR_ENV),
+        }
+
+        // Should still succeed using the platform config dir
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn app_data_dir_with_env_joins_app_name() {
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = TempDir::new().expect("temp dir");
+        let env_key = "NPMENC_TEST_JOIN_APP_NAME";
+        let previous = std::env::var_os(env_key);
+        std::env::set_var(env_key, dir.path());
+
+        let result = app_data_dir_with_env("my-custom-app", Some(env_key));
+
+        match previous {
+            Some(val) => std::env::set_var(env_key, val),
+            None => std::env::remove_var(env_key),
+        }
+
+        let path = result.expect("ok");
+        assert!(path.ends_with("my-custom-app"));
+        assert!(path.starts_with(dir.path()));
+    }
+
+    #[test]
+    fn app_data_dir_delegates_to_with_env() {
+        // app_data_dir(name) should be identical to app_data_dir_with_env(name, None)
+        let _lock = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let env_key = DEFAULT_CONFIG_DIR_ENV;
+        let previous = std::env::var_os(env_key);
+        std::env::remove_var(env_key);
+
+        let a = app_data_dir("npmenc-test-delegate").expect("a");
+        let b = app_data_dir_with_env("npmenc-test-delegate", None).expect("b");
+
+        match previous {
+            Some(val) => std::env::set_var(env_key, val),
+            None => std::env::remove_var(env_key),
+        }
+
+        assert_eq!(a, b);
     }
 }

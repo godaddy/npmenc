@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Result};
 use enclaveapp_app_adapter::{BindingStore, SecretStore};
 
+use crate::common::restore_previous_secret;
 use crate::provenance::has_any_install_provenance;
 use crate::registry_bindings::{
     default_registry_binding, normalize_registry_url_to_auth_key, RegistryBinding,
@@ -314,23 +315,6 @@ fn ensure_non_empty_secret(binding: &RegistryBinding, secret: &str) -> Result<()
         ));
     }
 
-    Ok(())
-}
-
-fn restore_previous_secret<S>(
-    secret_store: &S,
-    id: &enclaveapp_app_adapter::BindingId,
-    previous_secret: Option<&str>,
-) -> Result<()>
-where
-    S: SecretStore,
-{
-    match previous_secret {
-        Some(secret) => secret_store.set(id, secret)?,
-        None => {
-            let _ = secret_store.delete(id)?;
-        }
-    }
     Ok(())
 }
 

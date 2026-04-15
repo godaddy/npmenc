@@ -1,4 +1,6 @@
+pub mod cli_common;
 pub mod command_kind;
+pub mod common;
 pub mod config_path;
 pub mod install;
 pub mod management;
@@ -20,7 +22,8 @@ pub use management::{
 };
 pub use npmrc::{
     analyze_auth_entries, discover_scoped_auth_tokens, discover_unscoped_auth_tokens,
-    materialize_with_secrets, rewrite_with_bindings, AuthDiagnostics, RewriteOptions,
+    dominant_newline, is_comment_line, materialize_with_secrets, rewrite_with_bindings,
+    split_line_ending, split_lines_preserving_endings, AuthDiagnostics, RewriteOptions,
     RewriteResult, ScopedAuthToken,
 };
 pub use passthrough::{

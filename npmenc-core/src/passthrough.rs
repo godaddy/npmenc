@@ -8,7 +8,7 @@ use anyhow::Result;
 use enclaveapp_app_adapter::{
     prepare_best_app_launch, resolve_program, AdapterError, AppSpec, BindingStore, ConfigOverride,
     IntegrationCandidates, IntegrationPayload, LaunchRequest, ResolveMode, ResolveOptions,
-    SecretStore, TempConfig,
+    SecretStore, TempConfig, REDACTED_PLACEHOLDER,
 };
 
 use crate::command_kind::CommandKind;
@@ -518,7 +518,7 @@ where
         .find(|record| record.id == binding.id)
         .ok_or_else(|| AdapterError::MissingSecret(binding.label.clone()))?;
     if !allow_secret_mutation {
-        return Ok(("<redacted>".to_string(), None));
+        return Ok((REDACTED_PLACEHOLDER.to_string(), None));
     }
     let staged = acquire_secret_from_binding_token_source_staged(record, secret_store)?
         .ok_or_else(|| AdapterError::MissingSecret(binding.label.clone()))?;
@@ -1001,7 +1001,7 @@ mod tests {
         assert_eq!(prepared.mode, WrapperMode::ManagedBindings);
         assert_eq!(
             prepared.launch.env_overrides.get("NPM_TOKEN_DEFAULT"),
-            Some(&"<redacted>".to_string())
+            Some(&REDACTED_PLACEHOLDER.to_string())
         );
         assert!(!marker_path.exists());
         assert_eq!(secrets.get(&record.id).expect("secret"), None);

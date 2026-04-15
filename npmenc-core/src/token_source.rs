@@ -7,9 +7,12 @@ use std::process::Command;
 use anyhow::{anyhow, Result};
 use enclaveapp_app_adapter::{
     resolve_program, BindingId, BindingRecord, ResolveMode, ResolveOptions, SecretStore,
+    REDACTED_PLACEHOLDER,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::common::restore_previous_secret;
 
 const TOKEN_PROVIDER_KEY: &str = "token_provider";
 const TOKEN_HANDLE_KEY: &str = "token_handle";
@@ -583,7 +586,7 @@ where
             record.label
         ));
     };
-    if raw_state == "<redacted>" {
+    if raw_state == REDACTED_PLACEHOLDER {
         return Ok(match (expected_provider.as_str(), read_mode) {
             (COMMAND_TOKEN_PROVIDER, _) => Some(BindingTokenSource::Command {
                 command: raw_state,
@@ -638,7 +641,7 @@ where
     let Some(state) = secret_store.get(&token_source_state_id(binding_id))? else {
         return Ok(None);
     };
-    if state != "<redacted>"
+    if state != REDACTED_PLACEHOLDER
         && !state.trim_start().starts_with('{')
         && !has_prepared_token_source_state(binding_id, secret_store)?
     {
@@ -650,7 +653,7 @@ where
 }
 
 fn load_token_source_state_by_id_from_value(state: String) -> Result<Option<BindingTokenSource>> {
-    if state == "<redacted>" {
+    if state == REDACTED_PLACEHOLDER {
         return Ok(Some(BindingTokenSource::Command {
             command: state,
             prepared: true,
@@ -1103,23 +1106,6 @@ where
         set_token_source_prepared_marker(binding_id, secret_store)?;
     } else {
         clear_token_source_prepared_marker(binding_id, secret_store)?;
-    }
-    Ok(())
-}
-
-fn restore_previous_secret<S>(
-    secret_store: &S,
-    id: &BindingId,
-    previous_secret: Option<&str>,
-) -> Result<()>
-where
-    S: SecretStore,
-{
-    match previous_secret {
-        Some(secret) => secret_store.set(id, secret)?,
-        None => {
-            let _ = secret_store.delete(id)?;
-        }
     }
     Ok(())
 }
@@ -1891,7 +1877,7 @@ mod tests {
         let secrets = MemorySecretStore::new();
         let record = binding_record_with_provider("sso-jwt");
         secrets
-            .set(&token_source_state_id(&record.id), "<redacted>")
+            .set(&token_source_state_id(&record.id), REDACTED_PLACEHOLDER)
             .expect("state");
         secrets
             .set(

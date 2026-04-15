@@ -10,7 +10,9 @@ pub mod temp_config;
 pub mod types;
 
 pub use app_spec::{AppSpec, ConfigOverride};
-pub use binding_store::{app_data_dir, BindingStore, JsonFileBindingStore, MemoryBindingStore};
+pub use binding_store::{
+    app_data_dir, app_data_dir_with_env, BindingStore, JsonFileBindingStore, MemoryBindingStore,
+};
 pub use error::{AdapterError, Result};
 pub use execution_plan::choose_integration;
 pub use launcher::{run, LaunchRequest};
@@ -21,6 +23,7 @@ pub use prepare_launch::{
 pub use resolver::{resolve_program, ResolveMode, ResolveOptions};
 pub use secret_store::{
     EncryptedFileSecretStore, MemorySecretStore, ReadOnlyEncryptedFileSecretStore, SecretStore,
+    REDACTED_PLACEHOLDER,
 };
 pub use temp_config::TempConfig;
 pub use types::{BindingId, BindingRecord, IntegrationType, ResolutionStrategy, ResolvedProgram};
