@@ -534,3 +534,68 @@ fn validate_non_empty_secret(binding: &RegistryBinding, secret: String) -> Resul
 
     Ok(secret)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_variant_npm_has_correct_fields() {
+        let variant = CliVariant {
+            command_kind: CommandKind::Npm,
+            display_name: "npmenc",
+        };
+        assert_eq!(variant.command_kind, CommandKind::Npm);
+        assert_eq!(variant.display_name, "npmenc");
+        assert_eq!(variant.command_kind.executable_name(), "npm");
+    }
+
+    #[test]
+    fn cli_variant_npx_has_correct_fields() {
+        let variant = CliVariant {
+            command_kind: CommandKind::Npx,
+            display_name: "npxenc",
+        };
+        assert_eq!(variant.command_kind, CommandKind::Npx);
+        assert_eq!(variant.display_name, "npxenc");
+        assert_eq!(variant.command_kind.executable_name(), "npx");
+    }
+
+    #[test]
+    fn cli_variant_clone() {
+        let variant = CliVariant {
+            command_kind: CommandKind::Npm,
+            display_name: "npmenc",
+        };
+        let cloned = variant.clone();
+        assert_eq!(variant.command_kind, cloned.command_kind);
+        assert_eq!(variant.display_name, cloned.display_name);
+    }
+
+    #[test]
+    fn cli_variant_debug_impl() {
+        let variant = CliVariant {
+            command_kind: CommandKind::Npm,
+            display_name: "npmenc",
+        };
+        let debug = format!("{variant:?}");
+        assert!(debug.contains("Npm"));
+        assert!(debug.contains("npmenc"));
+    }
+
+    #[test]
+    fn exit_code_from_status_zero_is_success() {
+        use std::process::Command;
+        let status = Command::new("true").status().expect("run true");
+        let code = exit_code_from_status(status);
+        assert_eq!(code, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn exit_code_from_status_nonzero_is_failure() {
+        use std::process::Command;
+        let status = Command::new("false").status().expect("run false");
+        let code = exit_code_from_status(status);
+        assert_ne!(code, ExitCode::SUCCESS);
+    }
+}

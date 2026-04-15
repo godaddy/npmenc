@@ -459,4 +459,148 @@ mod tests {
             "color=true\r\n//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\r\n"
         );
     }
+
+    // ── is_comment_line variants ──────────────────────────────────────
+
+    #[test]
+    fn is_comment_line_semicolon() {
+        assert!(is_comment_line("; this is a comment"));
+    }
+
+    #[test]
+    fn is_comment_line_hash() {
+        assert!(is_comment_line("# this is a comment"));
+    }
+
+    #[test]
+    fn is_comment_line_with_leading_whitespace() {
+        assert!(is_comment_line("  ; indented comment"));
+        assert!(is_comment_line("\t# tab comment"));
+    }
+
+    #[test]
+    fn is_comment_line_empty_is_not_comment() {
+        assert!(!is_comment_line(""));
+        assert!(!is_comment_line("   "));
+    }
+
+    #[test]
+    fn is_comment_line_normal_line_is_not_comment() {
+        assert!(!is_comment_line("//registry.npmjs.org/:_authToken=secret"));
+        assert!(!is_comment_line("registry=https://registry.npmjs.org/"));
+    }
+
+    #[test]
+    fn is_comment_line_comment_with_auth_token() {
+        assert!(is_comment_line(
+            "; //registry.npmjs.org/:_authToken=old-token"
+        ));
+        assert!(is_comment_line(
+            "# //registry.npmjs.org/:_authToken=old-token"
+        ));
+    }
+
+    // ── Comment lines in discover_scoped_auth_tokens ──────────────────
+
+    #[test]
+    fn discover_scoped_auth_tokens_ignores_comments() {
+        let content =
+            "; //registry.npmjs.org/:_authToken=secret\n//other.registry.com/:_authToken=real\n";
+        let tokens = discover_scoped_auth_tokens(content);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].auth_key, "//other.registry.com/:_authToken");
+    }
+
+    // ── Comment lines in discover_unscoped_auth_tokens ────────────────
+
+    #[test]
+    fn discover_unscoped_auth_tokens_ignores_comments() {
+        let content = "# _authToken=secret\n_authToken=real\n";
+        let tokens = discover_unscoped_auth_tokens(content);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], "real");
+    }
+
+    // ── Comments preserved in rewrite_with_bindings ───────────────────
+
+    #[test]
+    fn rewrite_preserves_comment_lines_unchanged() {
+        let content = "; comment line\n//reg.io/:_authToken=token\n# another comment\n";
+        let result = rewrite_with_bindings(
+            content,
+            &[],
+            RewriteOptions {
+                append_missing_bindings: false,
+                allow_unscoped_auth: false,
+            },
+        );
+        assert!(result.contents.contains("; comment line"));
+        assert!(result.contents.contains("# another comment"));
+    }
+
+    // ── Mixed comments and real entries ────────────────────────────────
+
+    #[test]
+    fn mixed_comments_and_entries() {
+        let content = "; old registry\n; //old.reg/:_authToken=expired\n//real.reg/:_authToken=valid\n# end\n";
+        let tokens = discover_scoped_auth_tokens(content);
+        assert_eq!(tokens.len(), 1);
+        assert!(tokens[0].auth_key.contains("real.reg"));
+    }
+
+    // ── CRLF line endings with comments ───────────────────────────────
+
+    #[test]
+    fn crlf_comment_lines_handled() {
+        let content = "; comment\r\n//reg.io/:_authToken=tok\r\n# comment2\r\n";
+        let tokens = discover_scoped_auth_tokens(content);
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].auth_key, "//reg.io/:_authToken");
+    }
+
+    #[test]
+    fn crlf_comments_preserved_by_rewrite() {
+        let binding = RegistryBinding::new("default", "https://registry.npmjs.org/");
+        let source = "; comment\r\n//registry.npmjs.org/:_authToken=abc\r\n# another comment\r\n";
+        let rewritten = rewrite_with_bindings(source, &[binding], RewriteOptions::default());
+        assert!(rewritten.contents.contains("; comment\r\n"));
+        assert!(rewritten.contents.contains("# another comment\r\n"));
+        assert!(rewritten.contents.contains("${NPM_TOKEN_DEFAULT}"));
+    }
+
+    #[test]
+    fn materialize_preserves_comment_lines() {
+        let binding = RegistryBinding::new("default", "https://registry.npmjs.org/");
+        let source = "; comment\n//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n# tail\n";
+        let secrets = BTreeMap::from([("default".to_string(), "npm_ABC".to_string())]);
+        let result = materialize_with_secrets(source, &[binding], &secrets);
+        assert!(result.contents.contains("; comment\n"));
+        assert!(result.contents.contains("# tail\n"));
+        assert!(result.contents.contains("npm_ABC"));
+    }
+
+    #[test]
+    fn analyze_auth_entries_ignores_comments_among_entries() {
+        let source = "; _authToken=old\n_authToken=real\n# _auth=hidden\n_auth=visible\n";
+        let diagnostics = analyze_auth_entries(source);
+        assert_eq!(diagnostics.unscoped_auth_tokens.len(), 1);
+        assert_eq!(diagnostics.legacy_auth_keys.len(), 1);
+        assert_eq!(diagnostics.legacy_auth_keys[0], "_auth");
+    }
+
+    #[test]
+    fn only_semicolon_char_is_comment() {
+        assert!(is_comment_line(";"));
+    }
+
+    #[test]
+    fn only_hash_char_is_comment() {
+        assert!(is_comment_line("#"));
+    }
+
+    #[test]
+    fn semicolon_in_value_is_not_comment() {
+        // A key=value pair where the value happens to contain `;`
+        assert!(!is_comment_line("registry=https://example.com/;foo"));
+    }
 }

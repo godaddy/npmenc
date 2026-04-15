@@ -111,4 +111,116 @@ mod tests {
             UnscopedAuthState::RawUnsupported
         );
     }
+
+    // ── Additional edge cases ─────────────────────────────────────────
+
+    #[test]
+    fn effective_unscoped_token_returns_last() {
+        let values = vec!["first".to_string(), "second".to_string()];
+        assert_eq!(effective_unscoped_token(&values), Some("second"));
+    }
+
+    #[test]
+    fn effective_unscoped_token_returns_none_for_empty() {
+        let values: Vec<String> = vec![];
+        assert_eq!(effective_unscoped_token(&values), None);
+    }
+
+    #[test]
+    fn effective_unscoped_token_returns_single() {
+        let values = vec!["only".to_string()];
+        assert_eq!(effective_unscoped_token(&values), Some("only"));
+    }
+
+    #[test]
+    fn looks_like_placeholder_recognizes_env_var_syntax() {
+        assert!(looks_like_placeholder("${NPM_TOKEN_DEFAULT}"));
+        assert!(looks_like_placeholder("${MY_CUSTOM_TOKEN}"));
+    }
+
+    #[test]
+    fn looks_like_placeholder_rejects_partial() {
+        assert!(!looks_like_placeholder("NPM_TOKEN_DEFAULT}"));
+        assert!(!looks_like_placeholder("${NPM_TOKEN_DEFAULT"));
+        assert!(!looks_like_placeholder("real-token"));
+        assert!(!looks_like_placeholder(""));
+    }
+
+    #[test]
+    fn looks_like_placeholder_with_whitespace() {
+        assert!(looks_like_placeholder("  ${NPM_TOKEN_DEFAULT}  "));
+    }
+
+    #[test]
+    fn looks_like_empty_secret_various() {
+        assert!(looks_like_empty_secret(""));
+        assert!(looks_like_empty_secret("  "));
+        assert!(looks_like_empty_secret("\t"));
+        assert!(!looks_like_empty_secret("x"));
+    }
+
+    #[test]
+    fn classify_empty_string_value() {
+        assert_eq!(
+            classify_unscoped_auth(Some(""), false, false),
+            UnscopedAuthState::Empty
+        );
+    }
+
+    #[test]
+    fn classify_whitespace_only_value() {
+        assert_eq!(
+            classify_unscoped_auth(Some("   \t  "), false, false),
+            UnscopedAuthState::Empty
+        );
+    }
+
+    #[test]
+    fn classify_allow_overrides_managed_default() {
+        // When both allow_unscoped_auth and managed_default_binding_active are true,
+        // RawAllowed takes precedence (it is checked first)
+        assert_eq!(
+            classify_unscoped_auth(Some("real-token"), true, true),
+            UnscopedAuthState::RawAllowed
+        );
+    }
+
+    #[test]
+    fn requires_warning_or_strict_only_for_raw_unsupported() {
+        assert!(!UnscopedAuthState::None.requires_warning_or_strict());
+        assert!(!UnscopedAuthState::Empty.requires_warning_or_strict());
+        assert!(!UnscopedAuthState::ManagedPlaceholder.requires_warning_or_strict());
+        assert!(!UnscopedAuthState::RawAllowed.requires_warning_or_strict());
+        assert!(!UnscopedAuthState::RawProtectedByManagedDefault.requires_warning_or_strict());
+        assert!(UnscopedAuthState::RawUnsupported.requires_warning_or_strict());
+    }
+
+    #[test]
+    fn should_rewrite_for_managed_states() {
+        assert!(UnscopedAuthState::ManagedPlaceholder.should_rewrite());
+        assert!(UnscopedAuthState::RawAllowed.should_rewrite());
+        assert!(UnscopedAuthState::RawProtectedByManagedDefault.should_rewrite());
+        assert!(!UnscopedAuthState::None.should_rewrite());
+        assert!(!UnscopedAuthState::Empty.should_rewrite());
+        assert!(!UnscopedAuthState::RawUnsupported.should_rewrite());
+    }
+
+    #[test]
+    fn source_line_kind_values() {
+        assert_eq!(
+            UnscopedAuthState::ManagedPlaceholder.source_line_kind(),
+            Some("unscoped_authToken")
+        );
+        assert_eq!(
+            UnscopedAuthState::RawAllowed.source_line_kind(),
+            Some("unscoped_authToken")
+        );
+        assert_eq!(
+            UnscopedAuthState::RawProtectedByManagedDefault.source_line_kind(),
+            Some("unscoped_authToken")
+        );
+        assert_eq!(UnscopedAuthState::None.source_line_kind(), None);
+        assert_eq!(UnscopedAuthState::Empty.source_line_kind(), None);
+        assert_eq!(UnscopedAuthState::RawUnsupported.source_line_kind(), None);
+    }
 }
