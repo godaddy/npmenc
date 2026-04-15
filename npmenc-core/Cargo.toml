@@ -10,7 +10,7 @@ description = "npm-specific core logic for npmenc and npxenc"
 anyhow = { workspace = true }
 clap = { workspace = true }
 dirs = { workspace = true }
-enclaveapp-app-adapter = { path = "../enclaveapp-app-adapter" }
+enclaveapp-app-adapter = { workspace = true }
 fs4 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

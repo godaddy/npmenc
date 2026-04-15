@@ -9,7 +9,7 @@ description = "Direct-launch npm wrapper with secure secret delivery substrate"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-enclaveapp-app-adapter = { path = "../enclaveapp-app-adapter" }
+enclaveapp-app-adapter = { workspace = true }
 npmenc-core = { path = "../npmenc-core" }
 
 [dev-dependencies]
