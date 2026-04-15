@@ -18,6 +18,11 @@ use crate::binding_store::app_data_dir;
 use crate::error::{AdapterError, Result};
 use crate::types::BindingId;
 
+/// Placeholder value returned by read-only secret stores instead of the
+/// actual secret.  Consumers that need to distinguish "secret exists but
+/// cannot be read" from a real value should compare against this constant.
+pub const REDACTED_PLACEHOLDER: &str = "<redacted>";
+
 pub trait SecretStore {
     fn set(&self, id: &BindingId, secret: &str) -> Result<()>;
     fn get(&self, id: &BindingId) -> Result<Option<String>>;
@@ -216,7 +221,7 @@ impl SecretStore for ReadOnlyEncryptedFileSecretStore {
         if !path.exists() {
             return Ok(None);
         }
-        Ok(Some("<redacted>".to_string()))
+        Ok(Some(REDACTED_PLACEHOLDER.to_string()))
     }
 
     fn delete(&self, id: &BindingId) -> Result<bool> {

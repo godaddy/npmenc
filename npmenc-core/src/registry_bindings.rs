@@ -70,6 +70,13 @@ pub fn normalize_registry_url_to_auth_key(registry_url: &str) -> String {
     format!("//{trimmed}/:_authToken")
 }
 
+/// Reconstruct a registry URL from an `.npmrc` auth key.
+///
+/// Auth keys in `.npmrc` do not carry the scheme (they start with `//`), so
+/// the original `http://` vs `https://` distinction is lost.  This function
+/// always assumes HTTPS.  When the caller has a [`RegistryBinding`] record
+/// available it should prefer `registry_url` from that record instead, as it
+/// preserves the scheme supplied at registration time.
 pub fn auth_key_to_registry_url(auth_key: &str) -> Option<String> {
     let host_and_path = auth_key.strip_prefix("//")?.strip_suffix("/:_authToken")?;
     Some(format!("https://{host_and_path}/"))

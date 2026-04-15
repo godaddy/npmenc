@@ -166,8 +166,21 @@ impl BindingStore for MemoryBindingStore {
     }
 }
 
+/// Default environment variable name used to override the config directory.
+const DEFAULT_CONFIG_DIR_ENV: &str = "NPMENC_CONFIG_DIR";
+
+/// Resolve the application data directory.
+///
+/// When `env_override` is `Some`, that environment variable name is checked
+/// first.  Otherwise the default `NPMENC_CONFIG_DIR` variable is consulted.
+/// Falls back to the platform-standard config directory.
 pub fn app_data_dir(app_name: &str) -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("NPMENC_CONFIG_DIR") {
+    app_data_dir_with_env(app_name, None)
+}
+
+pub fn app_data_dir_with_env(app_name: &str, env_override: Option<&str>) -> Result<PathBuf> {
+    let env_key = env_override.unwrap_or(DEFAULT_CONFIG_DIR_ENV);
+    if let Some(path) = std::env::var_os(env_key) {
         let dir = PathBuf::from(path).join(app_name);
         return Ok(dir);
     }

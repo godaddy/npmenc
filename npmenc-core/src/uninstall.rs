@@ -7,9 +7,13 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use enclaveapp_app_adapter::{AdapterError, BindingStore, SecretStore};
 
+use crate::common::restore_previous_secret;
 use crate::config_path::resolve_effective_userconfig;
 use crate::management::validate_unique_auth_keys;
-use crate::npmrc::discover_scoped_auth_tokens;
+use crate::npmrc::{
+    discover_scoped_auth_tokens, dominant_newline, split_line_ending,
+    split_lines_preserving_endings,
+};
 use crate::provenance::{
     applies_to_config_path, provenance_for_path, remove_provenance_for_path, InstallProvenance,
 };
@@ -305,23 +309,6 @@ where
     Ok(())
 }
 
-fn restore_previous_secret<S>(
-    secret_store: &S,
-    id: &enclaveapp_app_adapter::BindingId,
-    previous_secret: Option<&str>,
-) -> Result<()>
-where
-    S: SecretStore,
-{
-    match previous_secret {
-        Some(secret) => secret_store.set(id, secret)?,
-        None => {
-            let _deleted_secret = secret_store.delete(id)?;
-        }
-    }
-    Ok(())
-}
-
 fn restore_with_provenance(
     source: &str,
     binding_records: &[enclaveapp_app_adapter::BindingRecord],
@@ -467,32 +454,6 @@ where
             token_source_artifacts: staged.token_source_artifacts,
         }),
     ))
-}
-
-fn split_lines_preserving_endings(source: &str) -> Vec<&str> {
-    if source.is_empty() {
-        return Vec::new();
-    }
-
-    source.split_inclusive('\n').collect()
-}
-
-fn split_line_ending(line: &str) -> (&str, &str) {
-    if let Some(body) = line.strip_suffix("\r\n") {
-        (body, "\r\n")
-    } else if let Some(body) = line.strip_suffix('\n') {
-        (body, "\n")
-    } else {
-        (line, "")
-    }
-}
-
-fn dominant_newline(source: &str) -> &'static str {
-    if source.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    }
 }
 
 #[cfg(test)]

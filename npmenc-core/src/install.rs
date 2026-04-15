@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use enclaveapp_app_adapter::{BindingStore, SecretStore};
 
+use crate::common::restore_previous_secret;
 use crate::config_path::resolve_effective_userconfig;
 use crate::management::validate_unique_auth_keys;
 use crate::npmrc::{
@@ -509,23 +510,6 @@ where
             None => {
                 let _ = binding_store.delete(id)?;
             }
-        }
-    }
-    Ok(())
-}
-
-fn restore_previous_secret<S>(
-    secret_store: &S,
-    id: &enclaveapp_app_adapter::BindingId,
-    previous_secret: Option<&str>,
-) -> Result<()>
-where
-    S: SecretStore,
-{
-    match previous_secret {
-        Some(secret) => secret_store.set(id, secret)?,
-        None => {
-            let _ = secret_store.delete(id)?;
         }
     }
     Ok(())

@@ -59,3 +59,56 @@ impl UnscopedAuthState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_unscoped_auth_returns_none_when_no_value() {
+        assert_eq!(
+            classify_unscoped_auth(None, false, false),
+            UnscopedAuthState::None
+        );
+    }
+
+    #[test]
+    fn classify_unscoped_auth_detects_managed_placeholder() {
+        assert_eq!(
+            classify_unscoped_auth(Some("${NPM_TOKEN_DEFAULT}"), false, false),
+            UnscopedAuthState::ManagedPlaceholder
+        );
+    }
+
+    #[test]
+    fn classify_unscoped_auth_detects_empty() {
+        assert_eq!(
+            classify_unscoped_auth(Some("  "), false, false),
+            UnscopedAuthState::Empty
+        );
+    }
+
+    #[test]
+    fn classify_unscoped_auth_allows_raw_when_flag_set() {
+        assert_eq!(
+            classify_unscoped_auth(Some("real-token"), true, false),
+            UnscopedAuthState::RawAllowed
+        );
+    }
+
+    #[test]
+    fn classify_unscoped_auth_protected_by_managed_default() {
+        assert_eq!(
+            classify_unscoped_auth(Some("real-token"), false, true),
+            UnscopedAuthState::RawProtectedByManagedDefault
+        );
+    }
+
+    #[test]
+    fn classify_unscoped_auth_raw_unsupported() {
+        assert_eq!(
+            classify_unscoped_auth(Some("real-token"), false, false),
+            UnscopedAuthState::RawUnsupported
+        );
+    }
+}
