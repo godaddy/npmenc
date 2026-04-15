@@ -48,9 +48,10 @@ mod tests {
         let dir = TempDir::new().expect("temp dir");
         let path = dir.path().join("custom.npmrc");
         fs::write(&path, "color=true\n").expect("write");
+        let expected = fs::canonicalize(&path).unwrap_or(path);
         assert_eq!(
-            resolve_effective_userconfig(Some(&path)).expect("path"),
-            path
+            resolve_effective_userconfig(Some(&expected)).expect("path"),
+            expected
         );
     }
 
@@ -63,9 +64,10 @@ mod tests {
         fs::write(&path, "color=true\n").expect("write");
         symlink(&path, &link).expect("symlink");
 
+        let expected = fs::canonicalize(&path).unwrap_or(path);
         assert_eq!(
             resolve_effective_userconfig(Some(&link)).expect("path"),
-            path
+            expected
         );
     }
 }

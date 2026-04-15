@@ -1444,9 +1444,10 @@ fn normalize_program_path(path: &Path) -> Result<PathBuf> {
     Ok(std::env::current_dir()?.join(path))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use enclaveapp_app_adapter::MemorySecretStore;

@@ -532,9 +532,10 @@ where
     ))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::collections::BTreeMap;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use enclaveapp_app_adapter::{

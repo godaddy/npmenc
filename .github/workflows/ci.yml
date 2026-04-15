@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check / Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-latest
+          - name: Windows
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Clone libenclaveapp
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/godaddy/libenclaveapp.git ../libenclaveapp
+          cp -r ../libenclaveapp/crates ../crates
+          cp ../libenclaveapp/Cargo.toml ../Cargo.toml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config libtss2-dev gnome-keyring dbus-x11
+
+      - name: Start D-Bus and gnome-keyring (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          eval $(dbus-launch --sh-syntax)
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> "$GITHUB_ENV"
+          echo "test" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null || true
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Canonicalize TMPDIR (macOS)
+        if: runner.os == 'macOS'
+        run: echo "TMPDIR=$(python3 -c 'import tempfile, os; print(os.path.realpath(tempfile.gettempdir()))')" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: cargo test --workspace -- --test-threads=1
