@@ -1,4 +1,5 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
+#![cfg(unix)]
 
 use std::fs;
 use std::io::Write;
@@ -521,10 +522,12 @@ fn print_effective_config_uses_source_path_in_passthrough_mode() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        npmrc.display().to_string()
-    );
+    let expected = npmrc
+        .canonicalize()
+        .unwrap_or(npmrc.clone())
+        .display()
+        .to_string();
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
 }
 
 #[test]

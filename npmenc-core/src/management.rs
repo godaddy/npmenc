@@ -318,9 +318,10 @@ fn ensure_non_empty_secret(binding: &RegistryBinding, secret: &str) -> Result<()
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Mutex;
 
