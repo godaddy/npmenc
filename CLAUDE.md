@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-`npmenc` and `npxenc` are **Type 2 (EnvInterpolation)** enclave apps that secure npm registry authentication tokens. They wrap the `npm` and `npx` commands, replacing plaintext tokens in `.npmrc` with `${ENV_VAR}` placeholders and injecting decrypted tokens as environment variables at execution time via `execve()`.
+`npmenc` and `npxenc` are [**Type 2 (EnvInterpolation)**](https://github.com/godaddy/libenclaveapp/blob/main/DESIGN.md#type-2-envinterpolation) enclave apps that secure npm registry authentication tokens. They wrap the `npm` and `npx` commands, replacing plaintext tokens in `.npmrc` with `${ENV_VAR}` placeholders and injecting decrypted tokens as environment variables at execution time via `execve()`.
 
 ## Integration Type
 
-Type 2 (EnvInterpolation) — npm supports `${ENV_VAR}` interpolation in `.npmrc` files. npmenc rewrites `.npmrc` to use placeholders like `${NPM_TOKEN_DEFAULT}` and sets these env vars when launching npm/npx. Secrets never touch disk in plaintext.
+[Type 2 (EnvInterpolation)](https://github.com/godaddy/libenclaveapp/blob/main/DESIGN.md#type-2-envinterpolation) — npm supports `${ENV_VAR}` interpolation in `.npmrc` files. npmenc rewrites `.npmrc` to use placeholders like `${NPM_TOKEN_DEFAULT}` and sets these env vars when launching npm/npx. Secrets never touch disk in plaintext. See [libenclaveapp DESIGN.md](https://github.com/godaddy/libenclaveapp/blob/main/DESIGN.md#application-integration-types) for the full integration type taxonomy.
 
 ## Build & Development
 
