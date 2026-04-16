@@ -473,6 +473,12 @@ mod tests {
     use super::*;
     use crate::provenance::{set_provenance_for_path, InstallProvenance};
 
+    fn canon(dir: &TempDir) -> PathBuf {
+        dir.path()
+            .canonicalize()
+            .unwrap_or_else(|_| dir.path().to_path_buf())
+    }
+
     #[derive(Debug, Default)]
     struct FailingBindingStore {
         records: Mutex<Vec<BindingRecord>>,
@@ -583,7 +589,7 @@ mod tests {
     #[test]
     fn uninstall_materializes_placeholders() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -619,7 +625,7 @@ mod tests {
     #[test]
     fn uninstall_restores_unscoped_auth_shape_when_recorded() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -652,7 +658,7 @@ mod tests {
     #[test]
     fn uninstall_removes_appended_managed_lines() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "color=true\n//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -686,7 +692,7 @@ mod tests {
     #[test]
     fn uninstall_removes_appended_managed_lines_without_needing_secret() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "color=true\n//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -722,8 +728,8 @@ mod tests {
     #[test]
     fn uninstall_ignores_records_from_other_config_paths() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let other_path = dir.path().join("other.npmrc");
+        let path = canon(&dir).join("user.npmrc");
+        let other_path = canon(&dir).join("other.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -753,8 +759,8 @@ mod tests {
     #[test]
     fn uninstall_reacquires_secret_from_token_source_when_missing() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let script_path = dir.path().join("source-token");
+        let path = canon(&dir).join("user.npmrc");
+        let script_path = canon(&dir).join("source-token");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -801,8 +807,8 @@ mod tests {
     #[test]
     fn uninstall_restores_original_secret_state_when_reacquired_secret_rollback_is_needed() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let script_path = dir.path().join("source-token");
+        let path = canon(&dir).join("user.npmrc");
+        let script_path = canon(&dir).join("source-token");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -846,7 +852,7 @@ mod tests {
     #[test]
     fn uninstall_restores_source_managed_binding_even_if_placeholder_line_was_removed() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "color=true\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -879,7 +885,7 @@ mod tests {
     #[test]
     fn uninstall_restores_unscoped_auth_when_placeholder_line_was_removed() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "color=true\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -910,7 +916,7 @@ mod tests {
     #[test]
     fn uninstall_does_not_purge_manual_binding_without_install_provenance() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "color=true\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -933,8 +939,8 @@ mod tests {
     #[test]
     fn uninstall_keeps_binding_when_other_config_provenance_remains() {
         let dir = TempDir::new().expect("temp dir");
-        let path_a = dir.path().join("a.npmrc");
-        let path_b = dir.path().join("b.npmrc");
+        let path_a = canon(&dir).join("a.npmrc");
+        let path_b = canon(&dir).join("b.npmrc");
         fs::write(&path_a, "color=true\n").expect("write a");
         fs::write(&path_b, "color=true\n").expect("write b");
 
@@ -968,7 +974,7 @@ mod tests {
     #[test]
     fn uninstall_keep_secrets_removes_config_provenance() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "color=true\n//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -1005,7 +1011,7 @@ mod tests {
     #[test]
     fn uninstall_rejects_duplicate_auth_key_state() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "color=true\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -1029,7 +1035,7 @@ mod tests {
     #[test]
     fn uninstall_restores_original_file_when_state_update_fails() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -1067,7 +1073,7 @@ mod tests {
     #[test]
     fn uninstall_does_not_treat_auth_key_mentions_in_comments_as_managed_lines() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "# mention //registry.npmjs.org/:_authToken in a comment only\ncolor=true\n",

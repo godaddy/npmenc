@@ -1456,10 +1456,16 @@ mod tests {
     use super::*;
     use crate::test_support::lock_env;
 
+    fn canon(dir: &TempDir) -> PathBuf {
+        dir.path()
+            .canonicalize()
+            .unwrap_or_else(|_| dir.path().to_path_buf())
+    }
+
     #[test]
     fn acquires_secret_from_command_stdout() {
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("source-token");
+        let script = canon(&dir).join("source-token");
         fs::write(&script, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -1472,7 +1478,7 @@ mod tests {
     #[test]
     fn canonicalizes_token_source_to_direct_exec_handle() {
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("source-token");
+        let script = canon(&dir).join("source-token");
         fs::write(&script, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -1490,7 +1496,7 @@ mod tests {
     #[test]
     fn stores_command_token_source_as_safe_metadata_and_encrypted_payload() {
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("source-token");
+        let script = canon(&dir).join("source-token");
         fs::write(&script, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -1638,7 +1644,7 @@ mod tests {
     fn ambiguous_legacy_bare_provider_spec_is_reported_as_corrupt() {
         let _env_lock = lock_env();
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("sso-jwt");
+        let script = canon(&dir).join("sso-jwt");
         fs::write(&script, "#!/bin/sh\nprintf 'legacy-provider-token\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -1697,7 +1703,7 @@ mod tests {
     fn generic_provider_uses_env_contract_instead_of_handle_argv() {
         let _env_lock = lock_env();
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("corp-provider");
+        let script = canon(&dir).join("corp-provider");
         fs::write(
             &script,
             "#!/bin/sh\npython3 - <<'PY'\nimport json, os\nrequest = json.loads(os.environ['NPMENC_TOKEN_PROVIDER_REQUEST_JSON'])\nprint(f\"{os.environ['NPMENC_TOKEN_PROVIDER_PROTOCOL']}|{request['provider']}|{request['handle']}\")\nPY\n",
@@ -1726,7 +1732,7 @@ mod tests {
     fn ambiguous_legacy_bare_generic_provider_spec_is_reported_as_corrupt() {
         let _env_lock = lock_env();
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("corp-provider");
+        let script = canon(&dir).join("corp-provider");
         fs::write(
             &script,
             "#!/bin/sh\npython3 - <<'PY'\nimport json, os\nrequest = json.loads(os.environ['NPMENC_TOKEN_PROVIDER_REQUEST_JSON'])\nprint(f\"{request['provider']}|{request['handle'] or ''}\")\nPY\n",
@@ -1803,7 +1809,7 @@ mod tests {
     fn prepare_token_source_metadata_persists_prepared_supported_provider_state() {
         let _env_lock = lock_env();
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("sso-jwt");
+        let script = canon(&dir).join("sso-jwt");
         fs::write(&script, "#!/bin/sh\nprintf 'provider-token\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -1841,7 +1847,7 @@ mod tests {
     #[test]
     fn prepared_provider_state_reacquires_from_persisted_command() {
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("sso-jwt-prepared");
+        let script = canon(&dir).join("sso-jwt-prepared");
         fs::write(&script, "#!/bin/sh\nprintf 'prepared-provider-token\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -1897,8 +1903,8 @@ mod tests {
     fn legacy_command_source_converges_after_first_successful_acquisition() {
         let _env_lock = lock_env();
         let dir = TempDir::new().expect("temp dir");
-        let bin1 = dir.path().join("bin1");
-        let bin2 = dir.path().join("bin2");
+        let bin1 = canon(&dir).join("bin1");
+        let bin2 = canon(&dir).join("bin2");
         fs::create_dir_all(&bin1).expect("bin1");
         fs::create_dir_all(&bin2).expect("bin2");
         let helper1 = bin1.join("legacy-helper");
@@ -1995,8 +2001,8 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let dir = TempDir::new().expect("temp dir");
-        let target = dir.path().join("source-token");
-        let link = dir.path().join("source-token-link");
+        let target = canon(&dir).join("source-token");
+        let link = canon(&dir).join("source-token-link");
         fs::write(&target, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&target).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -2027,7 +2033,7 @@ mod tests {
     fn unprepared_provider_state_upgrades_to_prepared_state_after_acquisition() {
         let _env_lock = lock_env();
         let dir = TempDir::new().expect("temp dir");
-        let script = dir.path().join("sso-jwt");
+        let script = canon(&dir).join("sso-jwt");
         fs::write(&script, "#!/bin/sh\nprintf 'upgraded-provider-token\\n'\n").expect("write");
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
