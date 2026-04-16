@@ -213,7 +213,7 @@ pub fn run_cli(variant: &CliVariant, cli: CommonCliOptions) -> Result<ExitCode> 
         eprintln!("warning: {warning}");
     }
 
-    let status = run(&prepared.launch)?;
+    let status = run(prepared.launch)?;
     Ok(exit_code_from_status(status))
 }
 
