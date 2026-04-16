@@ -8,6 +8,12 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
+fn canon(dir: &TempDir) -> std::path::PathBuf {
+    dir.path()
+        .canonicalize()
+        .unwrap_or_else(|_| dir.path().to_path_buf())
+}
+
 fn make_executable_script(path: &std::path::Path, body: &str) {
     fs::write(path, body).expect("write script");
     let mut perms = fs::metadata(path).expect("metadata").permissions();
@@ -45,10 +51,10 @@ fn write_default_binding_with_token_source(config_root: &std::path::Path, token_
 #[test]
 fn executes_target_with_transient_fallback_env_and_placeholder_config() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
-    let target = dir.path().join("mock-npm");
-    let capture = dir.path().join("capture.txt");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
+    let target = canon(&dir).join("mock-npm");
+    let capture = canon(&dir).join("capture.txt");
 
     fs::write(
         &npmrc,
@@ -93,10 +99,10 @@ fn executes_target_with_transient_fallback_env_and_placeholder_config() {
 #[test]
 fn managed_binding_overrides_materialized_file_token() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
-    let target = dir.path().join("mock-npm");
-    let capture = dir.path().join("capture.txt");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
+    let target = canon(&dir).join("mock-npm");
+    let capture = canon(&dir).join("capture.txt");
 
     fs::write(&npmrc, "//registry.npmjs.org/:_authToken=file_token\n").expect("write npmrc");
 
@@ -143,11 +149,11 @@ fn managed_binding_overrides_materialized_file_token() {
 #[test]
 fn dry_run_does_not_invoke_token_source_for_managed_binding() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
-    let target = dir.path().join("mock-npm");
-    let token_source = dir.path().join("source-token");
-    let marker = dir.path().join("token-source-ran");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
+    let target = canon(&dir).join("mock-npm");
+    let token_source = canon(&dir).join("source-token");
+    let marker = canon(&dir).join("token-source-ran");
 
     fs::write(
         &npmrc,
@@ -188,9 +194,9 @@ fn dry_run_does_not_invoke_token_source_for_managed_binding() {
 #[test]
 fn dry_run_does_not_create_managed_state_directory() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
-    let target = dir.path().join("mock-npm");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
+    let target = canon(&dir).join("mock-npm");
 
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
     make_executable_script(&target, "#!/bin/sh\n");
@@ -218,8 +224,8 @@ fn dry_run_does_not_create_managed_state_directory() {
 #[test]
 fn install_and_uninstall_round_trip_unscoped_auth_shape() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(&npmrc, "_authToken=npm_ABC123\n").expect("write npmrc");
 
     let install_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -262,10 +268,10 @@ fn install_and_uninstall_round_trip_unscoped_auth_shape() {
 #[test]
 fn auto_install_converts_source_and_continues_execution() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
-    let target = dir.path().join("mock-npm");
-    let capture = dir.path().join("capture.txt");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
+    let target = canon(&dir).join("mock-npm");
+    let capture = canon(&dir).join("capture.txt");
 
     fs::write(&npmrc, "//registry.npmjs.org/:_authToken=file_token\n").expect("write npmrc");
 
@@ -311,8 +317,8 @@ fn auto_install_converts_source_and_continues_execution() {
 #[test]
 fn uninstall_removes_placeholder_line_that_install_appended_for_managed_binding() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -364,8 +370,8 @@ fn uninstall_removes_placeholder_line_that_install_appended_for_managed_binding(
 #[test]
 fn token_add_alias_and_uninstall_keep_secrets_work() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
 
     let add_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -427,7 +433,7 @@ fn token_add_alias_and_uninstall_keep_secrets_work() {
 #[test]
 fn duplicate_registry_binding_for_same_url_is_rejected() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let first = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -470,8 +476,8 @@ fn duplicate_registry_binding_for_same_url_is_rejected() {
 #[test]
 fn dry_run_prints_effective_config_contents() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(
         &npmrc,
         "//registry.npmjs.org/:_authToken=file_token\ncolor=true\n",
@@ -503,8 +509,8 @@ fn dry_run_prints_effective_config_contents() {
 #[test]
 fn print_effective_config_uses_source_path_in_passthrough_mode() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -533,7 +539,7 @@ fn print_effective_config_uses_source_path_in_passthrough_mode() {
 #[test]
 fn credential_alias_and_remove_alias_work() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -574,7 +580,7 @@ fn credential_alias_and_remove_alias_work() {
 #[test]
 fn token_set_secret_stdin_works() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -614,8 +620,8 @@ fn token_set_secret_stdin_works() {
 #[test]
 fn token_set_token_source_command_works() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let token_source = dir.path().join("source-token");
+    let config_root = canon(&dir).join("config");
+    let token_source = canon(&dir).join("source-token");
     make_executable_script(&token_source, "#!/bin/sh\nprintf 'token_from_source\\n'\n");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -649,7 +655,7 @@ fn token_set_token_source_command_works() {
 #[test]
 fn registry_set_default_rejects_custom_url() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -671,8 +677,8 @@ fn registry_set_default_rejects_custom_url() {
 #[test]
 fn uninstall_purges_managed_state_by_default() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -716,7 +722,7 @@ fn uninstall_purges_managed_state_by_default() {
 #[test]
 fn registry_command_family_works() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let add_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -787,7 +793,7 @@ fn registry_command_family_works() {
 #[test]
 fn token_set_rejects_unsupported_provider_without_secret() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -803,8 +809,8 @@ fn token_set_rejects_unsupported_provider_without_secret() {
 #[test]
 fn token_set_with_supported_provider_acquires_and_lists_safe_metadata() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let bin_dir = dir.path().join("bin");
+    let config_root = canon(&dir).join("config");
+    let bin_dir = canon(&dir).join("bin");
     fs::create_dir_all(&bin_dir).expect("bin dir");
     let provider = bin_dir.join("sso-jwt");
     make_executable_script(&provider, "#!/bin/sh\nprintf 'provider-token'\n");
@@ -842,7 +848,7 @@ fn token_set_with_supported_provider_acquires_and_lists_safe_metadata() {
 #[test]
 fn token_set_with_secret_can_store_supported_provider_metadata_without_provider_binary() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -879,17 +885,17 @@ fn token_set_with_secret_can_store_supported_provider_metadata_without_provider_
 #[test]
 fn token_set_with_supported_provider_persists_prepared_state_for_later_reacquisition() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let userconfig = dir.path().join("user.npmrc");
-    let bin1 = dir.path().join("bin1");
-    let bin2 = dir.path().join("bin2");
+    let config_root = canon(&dir).join("config");
+    let userconfig = canon(&dir).join("user.npmrc");
+    let bin1 = canon(&dir).join("bin1");
+    let bin2 = canon(&dir).join("bin2");
     fs::create_dir_all(&bin1).expect("bin1");
     fs::create_dir_all(&bin2).expect("bin2");
     let provider1 = bin1.join("sso-jwt");
     let provider2 = bin2.join("sso-jwt");
     make_executable_script(&provider1, "#!/bin/sh\nprintf 'token-one'\n");
     make_executable_script(&provider2, "#!/bin/sh\nprintf 'token-two'\n");
-    let target = dir.path().join("npm");
+    let target = canon(&dir).join("npm");
     make_executable_script(&target, "#!/bin/sh\nprintf '%s' \"$NPM_TOKEN_DEFAULT\"\n");
     fs::write(
         &userconfig,
@@ -935,13 +941,13 @@ fn token_set_with_supported_provider_persists_prepared_state_for_later_reacquisi
 #[test]
 fn dry_run_still_recognizes_provider_managed_binding_after_secret_eviction() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let userconfig = dir.path().join("user.npmrc");
-    let bin = dir.path().join("bin");
+    let config_root = canon(&dir).join("config");
+    let userconfig = canon(&dir).join("user.npmrc");
+    let bin = canon(&dir).join("bin");
     fs::create_dir_all(&bin).expect("bin");
     let provider = bin.join("sso-jwt");
     make_executable_script(&provider, "#!/bin/sh\nprintf 'token-one'\n");
-    let target = dir.path().join("npm");
+    let target = canon(&dir).join("npm");
     make_executable_script(&target, "#!/bin/sh\nprintf '%s' \"$NPM_TOKEN_DEFAULT\"\n");
     fs::write(
         &userconfig,
@@ -997,7 +1003,7 @@ fn dry_run_still_recognizes_provider_managed_binding_after_secret_eviction() {
 #[test]
 fn token_source_metadata_is_listed() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -1036,7 +1042,7 @@ fn token_source_metadata_is_listed() {
 #[test]
 fn token_set_rejects_ambiguous_bare_token_source_specs() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -1051,7 +1057,7 @@ fn token_set_rejects_ambiguous_bare_token_source_specs() {
 #[test]
 fn token_list_fails_when_modern_token_source_metadata_is_corrupt() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -1087,8 +1093,8 @@ fn token_list_fails_when_modern_token_source_metadata_is_corrupt() {
 #[test]
 fn token_list_fails_for_orphan_sidecar_token_source_state() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let token_source = dir.path().join("source-token");
+    let config_root = canon(&dir).join("config");
+    let token_source = canon(&dir).join("source-token");
     make_executable_script(&token_source, "#!/bin/sh\nprintf 'token_from_source\\n'\n");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -1128,9 +1134,9 @@ fn token_list_fails_for_orphan_sidecar_token_source_state() {
 #[test]
 fn dry_run_fails_for_orphan_sidecar_token_source_state() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let token_source = dir.path().join("source-token");
-    let userconfig = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let token_source = canon(&dir).join("source-token");
+    let userconfig = canon(&dir).join("user.npmrc");
     make_executable_script(&token_source, "#!/bin/sh\nprintf 'token_from_source\\n'\n");
     fs::write(
         &userconfig,
@@ -1185,7 +1191,7 @@ fn dry_run_fails_for_orphan_sidecar_token_source_state() {
 #[test]
 fn deleting_missing_binding_reports_cleanly() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
+    let config_root = canon(&dir).join("config");
 
     let output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
         .env("NPMENC_CONFIG_DIR", &config_root)
@@ -1204,8 +1210,8 @@ fn deleting_missing_binding_reports_cleanly() {
 #[test]
 fn deleting_installed_binding_is_rejected() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
 
     let set_output = Command::new(env!("CARGO_BIN_EXE_npmenc"))
@@ -1244,10 +1250,10 @@ fn deleting_installed_binding_is_rejected() {
 #[test]
 fn managed_custom_registry_binding_is_appended_during_wrapped_execution() {
     let dir = TempDir::new().expect("temp dir");
-    let config_root = dir.path().join("config");
-    let npmrc = dir.path().join("user.npmrc");
-    let target = dir.path().join("mock-npm");
-    let capture = dir.path().join("capture.txt");
+    let config_root = canon(&dir).join("config");
+    let npmrc = canon(&dir).join("user.npmrc");
+    let target = canon(&dir).join("mock-npm");
+    let capture = canon(&dir).join("capture.txt");
 
     fs::write(&npmrc, "color=true\n").expect("write npmrc");
     make_executable_script(
