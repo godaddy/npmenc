@@ -10,6 +10,7 @@ description = "Direct-launch npx wrapper with secure secret delivery substrate"
 anyhow = { workspace = true }
 clap = { workspace = true }
 enclaveapp-app-adapter = { workspace = true }
+enclaveapp-core = { workspace = true }
 npmenc-core = { path = "../npmenc-core" }
 
 [dev-dependencies]

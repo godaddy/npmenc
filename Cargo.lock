@@ -402,13 +402,16 @@ dependencies = [
  "base64 0.22.1",
  "dirs",
  "enclaveapp-app-storage",
+ "enclaveapp-core",
  "fs4",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
  "shlex",
  "tempfile",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -459,6 +462,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -828,6 +832,7 @@ dependencies = [
  "anyhow",
  "clap",
  "enclaveapp-app-adapter",
+ "enclaveapp-core",
  "npmenc-core",
  "tempfile",
 ]
@@ -855,6 +860,7 @@ dependencies = [
  "anyhow",
  "clap",
  "enclaveapp-app-adapter",
+ "enclaveapp-core",
  "npmenc-core",
  "tempfile",
 ]

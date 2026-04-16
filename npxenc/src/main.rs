@@ -63,6 +63,8 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
+    enclaveapp_core::process::harden_process();
+
     let cli = Cli::parse();
     let variant = CliVariant {
         command_kind: CommandKind::Npx,
