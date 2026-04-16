@@ -17,6 +17,7 @@ jobs:
       unix_binaries: "npmenc npxenc"
       windows_binaries: "npmenc.exe npxenc.exe"
       cargo_build_args: ""
+      test_args: "--test-threads=1"
     secrets:
       HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
