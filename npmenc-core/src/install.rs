@@ -589,10 +589,20 @@ mod tests {
 
     use super::*;
 
+    /// Return the canonicalized path of a TempDir.
+    /// On macOS, /var is a symlink to /private/var; canonicalizing avoids
+    /// mismatches when code stores the resolved path but tests compare the
+    /// symlink path.
+    fn canon(dir: &TempDir) -> PathBuf {
+        dir.path()
+            .canonicalize()
+            .unwrap_or_else(|_| dir.path().to_path_buf())
+    }
+
     #[test]
     fn install_interns_tokens_and_rewrites_file() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=npm_ABC123\n//artifactory.example.com/api/npm/npm/:_authToken=jwt\n",
@@ -625,7 +635,7 @@ mod tests {
     #[test]
     fn install_reuses_existing_binding_for_same_auth_key() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "//registry.npmjs.org/:_authToken=npm_ABC123\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -643,7 +653,7 @@ mod tests {
     #[test]
     fn install_can_import_unscoped_auth_when_allowed() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "_authToken=npm_ABC123\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -659,7 +669,7 @@ mod tests {
     #[test]
     fn install_uses_last_unscoped_auth_token() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "_authToken=first\n_authToken=second\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -683,7 +693,7 @@ mod tests {
     #[test]
     fn install_ignores_empty_unscoped_auth_as_source_state() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "_authToken=\ncolor=true\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -710,7 +720,7 @@ mod tests {
     #[test]
     fn install_recognizes_managed_unscoped_placeholder_without_flag() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "_authToken=${NPM_TOKEN_DEFAULT}\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -739,7 +749,7 @@ mod tests {
     #[test]
     fn install_rewrites_raw_unscoped_auth_when_managed_default_binding_is_active() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "_authToken=file_token\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -777,7 +787,7 @@ mod tests {
     #[test]
     fn install_projects_existing_managed_binding_into_empty_file() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "color=true\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -818,8 +828,8 @@ mod tests {
     #[test]
     fn install_activates_binding_via_token_source_when_secret_is_missing() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let token_source = dir.path().join("source-token");
+        let path = canon(&dir).join("user.npmrc");
+        let token_source = canon(&dir).join("source-token");
         fs::write(&path, "color=true\n").expect("write");
         fs::write(&token_source, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&token_source).expect("metadata").permissions();
@@ -848,8 +858,8 @@ mod tests {
     #[test]
     fn install_does_not_warn_for_placeholder_binding_activated_via_token_source() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let token_source = dir.path().join("source-token");
+        let path = canon(&dir).join("user.npmrc");
+        let token_source = canon(&dir).join("source-token");
         fs::write(&path, "_authToken=${NPM_TOKEN_DEFAULT}\n").expect("write");
         fs::write(&token_source, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&token_source).expect("metadata").permissions();
@@ -883,8 +893,8 @@ mod tests {
     #[test]
     fn install_preserves_existing_source_provenance_on_token_source_reactivation() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let token_source = dir.path().join("source-token");
+        let path = canon(&dir).join("user.npmrc");
+        let token_source = canon(&dir).join("source-token");
         fs::write(&path, "color=true\n").expect("write");
         fs::write(&token_source, "#!/bin/sh\nprintf 'token-from-source\\n'\n").expect("write");
         let mut perms = fs::metadata(&token_source).expect("metadata").permissions();
@@ -926,8 +936,8 @@ mod tests {
     #[test]
     fn install_preserves_existing_token_source_metadata() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let token_source = dir.path().join("source-token");
+        let path = canon(&dir).join("user.npmrc");
+        let token_source = canon(&dir).join("source-token");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -970,8 +980,8 @@ mod tests {
     #[test]
     fn install_prefers_materialized_source_token_over_stale_token_source() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
-        let missing = dir.path().join("missing-source");
+        let path = canon(&dir).join("user.npmrc");
+        let missing = canon(&dir).join("missing-source");
         fs::write(&path, "//registry.npmjs.org/:_authToken=file_token\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -995,7 +1005,7 @@ mod tests {
     #[test]
     fn install_rejects_unscoped_placeholder_without_matching_managed_state() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "_authToken=${NPM_TOKEN_DEFAULT}\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
@@ -1011,7 +1021,7 @@ mod tests {
     #[test]
     fn install_rejects_scoped_placeholder_without_matching_managed_state() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -1031,7 +1041,7 @@ mod tests {
     #[test]
     fn install_does_not_record_provenance_for_placeholder_without_secret() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(
             &path,
             "//registry.npmjs.org/:_authToken=${NPM_TOKEN_DEFAULT}\n",
@@ -1054,7 +1064,7 @@ mod tests {
     #[test]
     fn install_ignores_empty_source_token_entries() {
         let dir = TempDir::new().expect("temp dir");
-        let path = dir.path().join("user.npmrc");
+        let path = canon(&dir).join("user.npmrc");
         fs::write(&path, "//registry.npmjs.org/:_authToken=\n").expect("write");
 
         let bindings = MemoryBindingStore::new();
