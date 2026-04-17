@@ -81,6 +81,9 @@ fn main() -> ExitCode {
         strict: cli.strict,
         allow_unscoped_auth: cli.allow_unscoped_auth,
         auto_install: cli.auto_install,
+        // npxenc does not expose --publish-only: npx invokes package code
+        // whose registry-auth needs we cannot predict, so always inject.
+        publish_only: false,
         args: cli.args,
     };
     match npmenc_core::cli_common::run_cli(&variant, options) {

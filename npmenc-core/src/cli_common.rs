@@ -128,6 +128,14 @@ pub struct CommonCliOptions {
     pub strict: bool,
     pub allow_unscoped_auth: bool,
     pub auto_install: bool,
+    /// When set, only inject `NPM_TOKEN*` into the child process for npm
+    /// subcommands that actually authenticate to the registry (publish,
+    /// whoami, access, token, etc.). Subcommands that merely consume
+    /// already-fetched packages (`version`, `run-script`, `init`, …) run
+    /// without the token. Reduces the Type-2 env-var exposure window at
+    /// the cost of breaking private-registry reads on `install` — opt-in
+    /// only, never default. Always injects for npxenc.
+    pub publish_only: bool,
     pub args: Vec<String>,
 }
 
@@ -136,6 +144,9 @@ pub fn run_cli(variant: &CliVariant, cli: CommonCliOptions) -> Result<ExitCode> 
         run_command(command, cli.userconfig.as_deref(), cli.allow_unscoped_auth)?;
         return Ok(ExitCode::SUCCESS);
     }
+
+    let publish_only_active =
+        cli.publish_only && !subcommand_needs_registry_auth(variant.command_kind, &cli.args);
 
     let invocation = WrapperInvocation {
         userconfig_override: cli.userconfig,
@@ -148,7 +159,7 @@ pub fn run_cli(variant: &CliVariant, cli: CommonCliOptions) -> Result<ExitCode> 
     };
     let inspection_only = cli.dry_run || cli.print_effective_config;
     let binding_store = JsonFileBindingStore::for_app("npmenc")?;
-    let prepared = if inspection_only {
+    let mut prepared = if inspection_only {
         let secret_store = ReadOnlyEncryptedFileSecretStore::for_app("npmenc")?;
         prepare_for_execution(
             variant,
@@ -171,6 +182,10 @@ pub fn run_cli(variant: &CliVariant, cli: CommonCliOptions) -> Result<ExitCode> 
             &secret_store,
         )?
     };
+
+    if publish_only_active {
+        strip_token_env_overrides(&mut prepared.launch.env_overrides);
+    }
 
     if cli.dry_run {
         println!("program: {}", prepared.launch.program.path.display());
@@ -224,6 +239,182 @@ pub fn exit_code_from_status(status: std::process::ExitStatus) -> ExitCode {
     } else {
         ExitCode::from(code as u8)
     }
+}
+
+/// npm subcommands that actually authenticate to the registry.
+///
+/// Limited to commands where npm sends the auth token to the registry:
+/// publishing / unpublishing / deprecating packages, managing access,
+/// owners, teams, dist-tags, user profile / tokens / hooks / org state,
+/// and explicit auth flows (`adduser`, `login`, etc.). Commands that
+/// merely consume fetched tarballs (`version`, `run-script`, `init`,
+/// `audit`, `ci`, `install` against a public registry) are excluded —
+/// `--publish-only` is about cutting the token's exposure window when it
+/// isn't needed, at the cost of breaking private-registry reads.
+const NPM_REGISTRY_AUTH_SUBCOMMANDS: &[&str] = &[
+    "publish",
+    "unpublish",
+    "deprecate",
+    "undeprecate",
+    "access",
+    "owner",
+    "team",
+    "dist-tag",
+    "dist-tags",
+    "whoami",
+    "profile",
+    "token",
+    "hook",
+    "hooks",
+    "org",
+    "adduser",
+    "add-user",
+    "login",
+    "signup",
+    "logout",
+    "star",
+    "unstar",
+    "stars",
+];
+
+/// npm subcommands that do NOT authenticate to the registry.
+///
+/// Only used as a positive signal that a given arg really is the
+/// subcommand. If the first positional we encounter is in neither list,
+/// we can't tell whether it's a subcommand or a flag value — default to
+/// "needs auth" so we don't accidentally strip the token for something
+/// that really does need it.
+const NPM_NON_AUTH_SUBCOMMANDS: &[&str] = &[
+    "install",
+    "i",
+    "in",
+    "ins",
+    "inst",
+    "insta",
+    "instal",
+    "isntall",
+    "isnt",
+    "add",
+    "ci",
+    "clean-install",
+    "clean-install-test",
+    "cit",
+    "install-ci-test",
+    "install-test",
+    "it",
+    "uninstall",
+    "un",
+    "unlink",
+    "remove",
+    "rm",
+    "r",
+    "update",
+    "up",
+    "upgrade",
+    "udpate",
+    "version",
+    "verison",
+    "run",
+    "run-script",
+    "rum",
+    "urn",
+    "test",
+    "tst",
+    "t",
+    "start",
+    "stop",
+    "restart",
+    "init",
+    "create",
+    "innit",
+    "pack",
+    "list",
+    "ls",
+    "la",
+    "ll",
+    "outdated",
+    "audit",
+    "fund",
+    "explain",
+    "why",
+    "prune",
+    "dedupe",
+    "ddp",
+    "find-dupes",
+    "rebuild",
+    "rb",
+    "view",
+    "v",
+    "info",
+    "show",
+    "search",
+    "find",
+    "s",
+    "se",
+    "help",
+    "help-search",
+    "docs",
+    "home",
+    "repo",
+    "bugs",
+    "config",
+    "c",
+    "set",
+    "get",
+    "cache",
+    "exec",
+    "x",
+    "shrinkwrap",
+    "completion",
+    "doctor",
+    "ping",
+    "edit",
+    "diff",
+    "sbom",
+    "query",
+    "q",
+    "root",
+    "prefix",
+    "bin",
+    "birthday",
+    "link",
+    "ln",
+    "pkg",
+    "sample",
+];
+
+fn subcommand_needs_registry_auth(kind: CommandKind, args: &[String]) -> bool {
+    match kind {
+        // npx invokes package code that may itself auth to the registry.
+        // We cannot introspect what the package will do, so always inject.
+        CommandKind::Npx => true,
+        CommandKind::Npm => {
+            // Walk left to right. The first positional that matches a
+            // known auth-requiring subcommand wins (inject). The first
+            // that matches a known non-auth subcommand wins (strip).
+            // Unknown positionals are treated as flag values and skipped
+            // — we default to "needs auth" if nothing is recognized, so
+            // a user mis-using --publish-only with custom/plugin
+            // subcommands still gets working tokens.
+            for arg in args {
+                if arg.starts_with('-') {
+                    continue;
+                }
+                let s = arg.as_str();
+                if NPM_REGISTRY_AUTH_SUBCOMMANDS.contains(&s) {
+                    return true;
+                }
+                if NPM_NON_AUTH_SUBCOMMANDS.contains(&s) {
+                    return false;
+                }
+            }
+            true
+        }
+    }
+}
+
+fn strip_token_env_overrides(env: &mut std::collections::BTreeMap<String, String>) {
+    env.retain(|key, _| !key.starts_with("NPM_TOKEN"));
 }
 
 fn run_command(
@@ -597,5 +788,142 @@ mod tests {
         let status = Command::new("false").status().expect("run false");
         let code = exit_code_from_status(status);
         assert_ne!(code, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn needs_auth_publish_commands() {
+        let cases = [
+            "publish",
+            "unpublish",
+            "deprecate",
+            "whoami",
+            "access",
+            "owner",
+            "team",
+            "dist-tag",
+            "token",
+            "adduser",
+            "login",
+            "logout",
+            "profile",
+            "hook",
+            "org",
+            "star",
+        ];
+        for cmd in cases {
+            assert!(
+                subcommand_needs_registry_auth(CommandKind::Npm, &[cmd.to_string()]),
+                "{cmd} should require auth"
+            );
+        }
+    }
+
+    #[test]
+    fn needs_auth_skips_non_publish_commands() {
+        let cases = [
+            "install",
+            "i",
+            "ci",
+            "version",
+            "run-script",
+            "run",
+            "test",
+            "init",
+            "audit",
+            "rebuild",
+            "pack",
+            "ls",
+            "prune",
+        ];
+        for cmd in cases {
+            assert!(
+                !subcommand_needs_registry_auth(CommandKind::Npm, &[cmd.to_string()]),
+                "{cmd} should NOT require auth"
+            );
+        }
+    }
+
+    #[test]
+    fn needs_auth_skips_flag_value_that_isnt_a_subcommand() {
+        // The scanner walks past flag values that aren't known
+        // subcommands and lands on the real subcommand.
+        let args = vec![
+            "--registry".to_string(),
+            "https://example.com".to_string(),
+            "publish".to_string(),
+        ];
+        assert!(subcommand_needs_registry_auth(CommandKind::Npm, &args));
+    }
+
+    #[test]
+    fn needs_auth_ambiguous_flag_value_collides_with_subcommand_name() {
+        // When a flag value (`info` in `--loglevel info`) happens to
+        // match a known non-auth subcommand name, we cannot tell it apart
+        // from the real subcommand. This is a known limitation of the
+        // positional-only heuristic. The first match wins, so `info`
+        // takes precedence over the later `publish`. Users who want
+        // --publish-only to behave correctly with such flags must use
+        // the `--flag=value` form instead of `--flag value`.
+        let args = vec![
+            "--loglevel".to_string(),
+            "info".to_string(),
+            "publish".to_string(),
+        ];
+        // `info` is a known alias for `view` (non-auth), so we return
+        // false here — documenting the heuristic's limit.
+        assert!(!subcommand_needs_registry_auth(CommandKind::Npm, &args));
+
+        // The `=` form removes the ambiguity.
+        let args = vec!["--loglevel=info".to_string(), "publish".to_string()];
+        assert!(subcommand_needs_registry_auth(CommandKind::Npm, &args));
+    }
+
+    #[test]
+    fn needs_auth_no_subcommand_defaults_to_true() {
+        // Unknown / empty args default to injecting — safer than
+        // silently breaking whatever the user runs with a misconfigured
+        // --publish-only flag.
+        assert!(subcommand_needs_registry_auth(CommandKind::Npm, &[]));
+        assert!(subcommand_needs_registry_auth(
+            CommandKind::Npm,
+            &["--help".to_string()]
+        ));
+    }
+
+    #[test]
+    fn needs_auth_unknown_subcommand_defaults_to_true() {
+        // A custom npm plugin or typo doesn't match either list. Default
+        // to auth=true so the token is injected. --publish-only is not
+        // supposed to break user workflows; it narrows exposure when we
+        // can be sure.
+        assert!(subcommand_needs_registry_auth(
+            CommandKind::Npm,
+            &["custom-plugin-command".to_string()]
+        ));
+    }
+
+    #[test]
+    fn npx_always_needs_auth() {
+        assert!(subcommand_needs_registry_auth(CommandKind::Npx, &[]));
+        assert!(subcommand_needs_registry_auth(
+            CommandKind::Npx,
+            &["create-react-app".to_string()]
+        ));
+    }
+
+    #[test]
+    fn strip_token_env_overrides_removes_only_npm_token_prefix() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("NPM_TOKEN".to_string(), "a".to_string());
+        env.insert("NPM_TOKEN_DEFAULT".to_string(), "b".to_string());
+        env.insert("NPM_TOKEN_MY_ORG".to_string(), "c".to_string());
+        env.insert("OTHER_VAR".to_string(), "d".to_string());
+        env.insert("NPMENC_CONFIG_DIR".to_string(), "e".to_string());
+
+        strip_token_env_overrides(&mut env);
+
+        assert_eq!(env.len(), 2);
+        assert_eq!(env.get("OTHER_VAR").map(String::as_str), Some("d"));
+        assert_eq!(env.get("NPMENC_CONFIG_DIR").map(String::as_str), Some("e"));
     }
 }
