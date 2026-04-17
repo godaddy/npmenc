@@ -160,19 +160,34 @@ failure against an internal HTTP registry, not a token leak.
 ### Threat: `NPM_TOKEN_*` injection when it is not needed
 
 Every `npmenc <cmd>` invocation injects `NPM_TOKEN_*` into the target
-process's environment. Most npm subcommands (`install`, `ci`,
-`run-script`, `publish`) do need the token, but many (`version`,
-`init`, local-only scripts) do not. The current design over-injects.
+process's environment by default. Most npm subcommands (`install`,
+`ci`, `run-script`, `publish`) do need the token, but many (`version`,
+`init`, local-only scripts) do not.
 
-**Tracked as hardening work.** A `--publish-only` gate that restricts
-injection to subcommands that actually authenticate to the registry
-(`publish`, `whoami`, `access`, `owner`, `deprecate`, `unpublish`) would
-materially reduce the `install`-time exposure window — the most
-dangerous because of lifecycle scripts.
+**Mitigation: `npmenc --publish-only`.** When this flag is set, npmenc
+strips `NPM_TOKEN*` from the child env unless the subcommand is in a
+known registry-auth list (`publish`, `unpublish`, `deprecate`,
+`access`, `owner`, `team`, `dist-tag`, `whoami`, `profile`, `token`,
+`hook`, `org`, `adduser`, `login`, `signup`, `logout`, `star`). This
+materially reduces the lifecycle-script exposure window on `install`
+and `ci` runs — at the cost of breaking private-registry reads. The
+flag is opt-in and never default; users who read from private
+registries should leave it off.
 
-**Residual risk:** full env injection for every subcommand is the
-default. Users can avoid injection by running `npm` directly (bypassing
-npmenc), but then `.npmrc` placeholders are not resolved.
+The subcommand detection uses a known-vocabulary scanner: unknown args
+are treated as flag values and skipped until a recognized subcommand
+is found. A value that happens to collide with a subcommand name (e.g.
+`--loglevel info`) is an edge case — use `--flag=value` form or omit
+`--publish-only` for such invocations. Unrecognized subcommands fall
+back to "needs auth" to avoid silently breaking user workflows.
+
+`npxenc` always injects — npx invokes package code whose registry-auth
+needs cannot be predicted.
+
+**Residual risk (without `--publish-only`):** full env injection for
+every subcommand is the default. Users who accept the private-registry
+tradeoff should set `--publish-only`; otherwise the Type-2
+lifecycle-script risk applies in full.
 
 ### Threat: Token-source subprocess hang
 

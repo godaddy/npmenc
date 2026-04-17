@@ -58,6 +58,13 @@ struct Cli {
     #[arg(long)]
     auto_install: bool,
 
+    /// Inject NPM_TOKEN* only for npm subcommands that authenticate to the
+    /// registry (publish, whoami, access, token, ...). Reduces the Type-2
+    /// env-var exposure window — at the cost of breaking private-registry
+    /// reads on `install`. Opt-in; never default.
+    #[arg(long)]
+    publish_only: bool,
+
     #[arg(last = true)]
     args: Vec<String>,
 }
@@ -81,6 +88,7 @@ fn main() -> ExitCode {
         strict: cli.strict,
         allow_unscoped_auth: cli.allow_unscoped_auth,
         auto_install: cli.auto_install,
+        publish_only: cli.publish_only,
         args: cli.args,
     };
     match npmenc_core::cli_common::run_cli(&variant, options) {
