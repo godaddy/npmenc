@@ -8,15 +8,14 @@
 `npmenc` and `npxenc` are direct-launch wrappers for `npm` and `npx` that adapt tools which
 expect credentials to live on disk.
 
-This repository intentionally incubates a reusable adapter library inside `npmenc` first:
+This repository layers on top of the reusable adapter library in `libenclaveapp`:
 
-- `enclaveapp-app-adapter`: generic application-adaptation substrate
+- `enclaveapp-app-adapter` (in `libenclaveapp`): generic application-adaptation substrate
 - `npmenc-core`: npm-specific `.npmrc` parsing, install/uninstall, and wrapper policy
 - `npmenc`: thin CLI for `npm`
 - `npxenc`: thin CLI for `npx`
 
-The adapter crate is meant to be promoted back into `libenclaveapp` after the abstraction
-stabilizes.
+The adapter was incubated in this repo and has since been promoted into `libenclaveapp`.
 
 ## Goals
 
@@ -48,14 +47,9 @@ placeholders like `${NPM_TOKEN_DEFAULT}`, not raw token material.
 
 ## Workspace Layout
 
-Current workspace crates:
+Current workspace crates (all npm-specific; the shared adapter substrate lives
+upstream in `libenclaveapp/crates/enclaveapp-app-adapter`):
 
-- `enclaveapp-app-adapter`
-  - executable resolution
-  - direct launch request construction
-  - temporary config lifecycle
-  - binding store
-  - encrypted secret store
 - `npmenc-core`
   - `.npmrc` parsing and rewrite rules
   - install / uninstall lifecycle
@@ -197,6 +191,15 @@ If a managed binding exists but the config has no corresponding auth line, the w
 path may append the minimal scoped auth entry.
 
 The parser is line-oriented and preserves unrelated settings and comments as much as practical.
+
+### Atomic rewrite
+
+All `.npmrc` rewrites go through `npmenc_core::atomic_write::atomic_write_preserving_mode`:
+a temp file is written alongside the target in the same directory, then
+`rename`d into place. On Unix the original file mode is read with
+`symlink_metadata()` before the rewrite and restored on the replacement so
+user-applied `chmod 600` persists. This closes the observable-partial-write
+window described in THREAT_MODEL.md.
 
 ### Placeholder rules
 
@@ -429,15 +432,29 @@ Wrapper flags:
 - `--strict`
 - `--allow-unscoped-auth`
 - `--auto-install`
+- `--publish-only`
 
 `npxenc` shares the same state directory and binding set as `npmenc`.
+
+### `--publish-only`
+
+When set, `npmenc` narrows the set of `NPM_TOKEN_*` environment variables
+injected into the child process to the subcommands that actually need registry
+authentication (e.g. `publish`, `unpublish`, `access`, `owner`, `token`,
+`deprecate`, `adduser`, `whoami`, `profile`, `hook`, `org`). Subcommands on the
+non-auth allowlist (e.g. `run`, `install`, `ci`, `test`, `view`, `search`,
+`init`) run with the `NPM_TOKEN_*` variables stripped from the child env. This
+limits token exposure for day-to-day invocations that do not need credentials.
+
+Implementation: `npmenc_core::cli_common::subcommand_needs_registry_auth`
+classifies the subcommand; `strip_token_env_overrides` removes the variables
+for subcommands that do not need them.
 
 ## Current Implementation Status
 
 Implemented in this repository:
 
-- reusable application adapter crate
-- npm-specific core crate
+- npm-specific core crate built on `enclaveapp-app-adapter` (upstream)
 - separate `npmenc` and `npxenc` binaries
 - encrypted secret storage
 - managed binding metadata
@@ -447,13 +464,6 @@ Implemented in this repository:
 - strict legacy-state corruption handling
 - provider and command token-source handling
 - adapter-level support for helper / env / temp-config integration classes
+- atomic `.npmrc` rewrites preserving Unix mode
+- `--publish-only` subcommand-scoped token exposure
 
-## Planned Future Extraction
-
-The adapter layer is intentionally still local to this repo.
-
-Planned next architectural step:
-
-1. keep proving the adapter against more consumers
-2. extract `enclaveapp-app-adapter` back into `libenclaveapp`
-3. reuse the same substrate for other credential-on-disk applications
