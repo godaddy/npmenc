@@ -1374,12 +1374,31 @@ fn acquire_secret_from_command_with_env(
     command: TokenSourceCommand,
     env_overrides: &[(String, String)],
 ) -> Result<String> {
+    use enclaveapp_core::timeout::{run_with_timeout, TimeoutResult};
+    use std::time::Duration;
+
+    // Credential helpers (1Password CLI, AWS Secrets Manager, custom scripts)
+    // are normally fast but can stall on network issues. Cap at 60s by
+    // default; override via NPMENC_TOKEN_SOURCE_TIMEOUT_SECS.
+    let timeout_secs = std::env::var("NPMENC_TOKEN_SOURCE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(60);
+
     let mut process = Command::new(&command.program);
     process.args(&command.args);
     for (key, value) in env_overrides {
         process.env(key, value);
     }
-    let output = process.output()?;
+    let output = match run_with_timeout(process, Duration::from_secs(timeout_secs))? {
+        TimeoutResult::Completed(o) => o,
+        TimeoutResult::TimedOut => {
+            return Err(anyhow!(
+                "token source `{}` did not respond within {timeout_secs}s (set NPMENC_TOKEN_SOURCE_TIMEOUT_SECS to override)",
+                serialize_token_source(&command)
+            ));
+        }
+    };
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
