@@ -94,12 +94,23 @@ apply to the npmenc process's copy, not npm's copy.
 
 ### Threat: Core dump / swap of the npm process
 
-npmenc calls `harden_process()` to disable core dumps of itself, but the
-target `npm` process is a separate PID. npmenc does not set rlimits on
-the target. A system-wide coredump policy can still capture `npm`'s env.
+npmenc calls `harden_process()` to disable core dumps of itself, and now
+also clamps `RLIMIT_CORE` on the spawned `npm`/`npx` child via a
+`pre_exec` hook in the launcher (`crates/enclaveapp-app-adapter/src/launcher.rs`).
+A segfault of `npm` no longer produces a core dump containing the
+interpolated `NPM_TOKEN_*` env bytes.
 
-**Mitigations:** operator-level `sysctl kernel.core_pattern=` or
-`ulimit -c 0` in the user's shell environment.
+**Mitigations:**
+- `disable_core_dumps_in_child` inside the launcher calls
+  `setrlimit(RLIMIT_CORE, {0, 0})` on Unix immediately before
+  `execve` — the child inherits the clamped limit for the rest of
+  its lifetime.
+- Operator-level `sysctl kernel.core_pattern=` or `ulimit -c 0`
+  remains a defense-in-depth backup.
+
+**Residual risk:** Windows WER crash-dump collection is a system-wide
+policy; child-process-local opt-out is not available. Users on
+Windows who care should disable WER at the group-policy level.
 
 ### Threat: npm's own logging / telemetry leaks the token
 
@@ -229,14 +240,23 @@ mode. Alias / function resolution has an 8-deep recursion cap.
 resolves. PATH-hijack is a user-side compromise that defeats many
 defenses at once.
 
-### Threat: `.handle` plaintext on macOS
+### Threat: `.handle` same-UID theft on macOS
 
-Inherited from libenclaveapp: the macOS Secure Enclave `.handle` file
-is currently plaintext on disk (0600). Keychain-wrapped AES-GCM is a
-planned hardening (`libenclaveapp/fix-macos.md`). Same-UID handle theft
-is possible on macOS until that lands — an attacker who copies the
-handle can replay SE signing on that user's device, defeating npmenc's
-"token on another host is useless" guarantee at the local level.
+Inherited from libenclaveapp: the macOS Secure Enclave `.handle`
+file is now AES-256-GCM sealed under a per-label wrapping key held
+in the login Keychain (`libenclaveapp/crates/enclaveapp-apple/src/keychain_wrap.rs`,
+on-disk format `[4B "EHW1"][12B nonce][ciphertext][16B tag]`). A
+same-UID attacker who copies the raw `.handle` file cannot replay SE
+operations without also having the Keychain wrapping key — and the
+Keychain's code-signature-bound ACL blocks that access from any
+binary other than the one that created it, reprompting the user on
+any unfamiliar binary. On ad-hoc (unsigned) builds every rebuild
+prompts once; on trusted-signing-identity builds the prompt is
+one-time per install. Residual risk reduces to the same-UID attacker
+who can *both* read the `.handle` file *and* drive the Keychain from
+the legitimate `npmenc` binary — equivalent to running `npmenc`
+directly as the user, which is outside what any Type-2 design can
+defend against.
 
 ### Threat: Multi-user machines
 
@@ -254,9 +274,13 @@ Windows credentials.
 ### Threat: WSL bridge
 
 Same as libenclaveapp — the bridge binary is discovered by a fixed-path
-list under `/mnt/c/Program Files/npmenc/`, with a `which` fallback that
-accepts any user-writable directory earlier on `$PATH`. PE signature
-validation is a tracked hardening gap. See the
+list under `/mnt/c/Program Files/npmenc/`. The former `which`-based
+PATH fallback has been removed so a user-writable `$PATH` entry cannot
+substitute a malicious bridge. Before spawn, the bridge binary's PE
+header is parsed and rejected if it carries no Authenticode signature
+block (opt-out `ENCLAVEAPP_BRIDGE_ALLOW_UNSIGNED=1`). Full chain
+verification via `WinVerifyTrust` is not reachable from the WSL side
+and is the acknowledged residual risk. See the
 [libenclaveapp threat model](https://github.com/godaddy/libenclaveapp/blob/main/THREAT_MODEL.md)
 for details.
 
@@ -266,13 +290,18 @@ Ranked by realistic impact on an npm user today:
 
 1. **Malicious dependency lifecycle script exfiltrates `NPM_TOKEN_*`.**
    `npm install` runs untrusted JavaScript with the token in the
-   environment. No defense possible at the npmenc layer.
+   environment. No defense possible at the npmenc layer. Users can
+   reduce exposure with `npmenc --publish-only` on install/ci paths.
 2. **Same-UID process reads `/proc/<npm-PID>/environ`.** Any concurrently
    running same-user process sees the token for npm's full lifetime.
-3. **npm itself leaks the token** through telemetry, crash dumps, or
+3. **Inherited `NPM_TOKEN_*` in the parent shell.** A developer who
+   has `NPM_TOKEN=...` exported in their shell gets that value
+   propagated to the wrapped `npm` child regardless of npmenc's own
+   encrypted binding. Callers can opt into scrubbing via the
+   launcher's `with_env_scrub(["NPM_TOKEN_*"])` (`enclaveapp-app-adapter::launcher`)
+   to remove inherited matches before spawn.
+4. **npm itself leaks the token** through telemetry, crash dumps, or
    verbose logging modes the user opts into.
-4. **`.handle` plaintext on macOS** until `fix-macos.md` lands —
-   same-UID handle theft allows local SE replay.
 5. **Token replay** within the npm automation token's validity window —
    rotate suspect tokens, prefer short-lived granular tokens.
 

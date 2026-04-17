@@ -74,4 +74,12 @@ jobs:
         run: echo "TMPDIR=$(python3 -c 'import tempfile, os; print(os.path.realpath(tempfile.gettempdir()))')" >> "$GITHUB_ENV"
 
       - name: Test
+        env:
+          # Force the in-memory MockEncryptionStorage on macOS runners.
+          # A real SecItemAdd to the runner's login keychain from an
+          # unsigned binary blocks indefinitely on an ACL confirmation
+          # prompt that the headless runner cannot answer. The library
+          # itself still exercises the real keychain path in its own
+          # enclaveapp-apple suite, which does run on macOS CI.
+          ENCLAVEAPP_MOCK_STORAGE: ${{ runner.os == 'macOS' && '1' || '' }}
         run: cargo test --workspace -- --test-threads=1
