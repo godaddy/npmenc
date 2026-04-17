@@ -73,5 +73,11 @@ jobs:
         if: runner.os == 'macOS'
         run: echo "TMPDIR=$(python3 -c 'import tempfile, os; print(os.path.realpath(tempfile.gettempdir()))')" >> "$GITHUB_ENV"
 
+      - name: Unlock login keychain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          security unlock-keychain -p "" "$HOME/Library/Keychains/login.keychain-db"
+          security set-keychain-settings -lut 21600 "$HOME/Library/Keychains/login.keychain-db"
+
       - name: Test
         run: cargo test --workspace -- --test-threads=1
