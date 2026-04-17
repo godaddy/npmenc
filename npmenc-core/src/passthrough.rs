@@ -99,6 +99,7 @@ pub fn prepare_passthrough(
             args,
             env_overrides,
             env_removals: Vec::new(),
+            env_scrub_patterns: Vec::new(),
         },
         effective_config_path: effective_userconfig,
         effective_config_contents: source,

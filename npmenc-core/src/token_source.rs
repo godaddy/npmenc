@@ -6,8 +6,8 @@ use std::process::Command;
 
 use anyhow::{anyhow, Result};
 use enclaveapp_app_adapter::{
-    resolve_program, BindingId, BindingRecord, ResolveMode, ResolveOptions, SecretStore,
-    REDACTED_PLACEHOLDER,
+    resolve_program, BindingId, BindingRecord, ResolveMode, ResolveOptions, SecretRead,
+    SecretStore, REDACTED_PLACEHOLDER,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -580,28 +580,36 @@ where
     let Some(expected_provider) = record.metadata.get(TOKEN_PROVIDER_KEY) else {
         return Ok(None);
     };
-    let Some(raw_state) = secret_store.get(&token_source_state_id(&record.id))? else {
-        return Err(anyhow!(
-            "binding `{}` has token source metadata but its persisted token source state is missing",
-            record.label
-        ));
+    let raw_state = match secret_store.get_read(&token_source_state_id(&record.id))? {
+        SecretRead::Present(value) => value,
+        SecretRead::Redacted => {
+            // Inspection path: the underlying secret exists but the
+            // store won't decrypt. Surface the appropriate placeholder
+            // state for the two supported providers. Note we never see
+            // Redacted on the read-write store, so this is reached
+            // only through the read-only inspection store.
+            return Ok(match (expected_provider.as_str(), read_mode) {
+                (COMMAND_TOKEN_PROVIDER, _) => Some(BindingTokenSource::Command {
+                    command: REDACTED_PLACEHOLDER.to_string(),
+                    prepared: true,
+                    needs_persist: false,
+                }),
+                (_, TokenSourceReadMode::Inspection) => Some(BindingTokenSource::Provider {
+                    provider: expected_provider.clone(),
+                    handle: None,
+                    adapter: None,
+                    needs_persist: false,
+                }),
+                _ => None,
+            });
+        }
+        SecretRead::Absent => {
+            return Err(anyhow!(
+                "binding `{}` has token source metadata but its persisted token source state is missing",
+                record.label
+            ));
+        }
     };
-    if raw_state == REDACTED_PLACEHOLDER {
-        return Ok(match (expected_provider.as_str(), read_mode) {
-            (COMMAND_TOKEN_PROVIDER, _) => Some(BindingTokenSource::Command {
-                command: raw_state,
-                prepared: true,
-                needs_persist: false,
-            }),
-            (_, TokenSourceReadMode::Inspection) => Some(BindingTokenSource::Provider {
-                provider: expected_provider.clone(),
-                handle: None,
-                adapter: None,
-                needs_persist: false,
-            }),
-            _ => None,
-        });
-    }
     if !raw_state.trim_start().starts_with('{') {
         return Err(anyhow!(
             "binding `{}` has token source metadata but its persisted token source state is in an unsupported legacy format",
@@ -638,11 +646,22 @@ fn load_token_source_state_by_id<S>(
 where
     S: SecretStore,
 {
-    let Some(state) = secret_store.get(&token_source_state_id(binding_id))? else {
-        return Ok(None);
+    let state = match secret_store.get_read(&token_source_state_id(binding_id))? {
+        SecretRead::Present(value) => value,
+        SecretRead::Redacted => {
+            // Read-only store indicating a real entry exists but is
+            // intentionally not handed over. Return the canonical
+            // redacted-command state without round-tripping through
+            // the string sentinel.
+            return Ok(Some(BindingTokenSource::Command {
+                command: REDACTED_PLACEHOLDER.to_string(),
+                prepared: true,
+                needs_persist: false,
+            }));
+        }
+        SecretRead::Absent => return Ok(None),
     };
-    if state != REDACTED_PLACEHOLDER
-        && !state.trim_start().starts_with('{')
+    if !state.trim_start().starts_with('{')
         && !has_prepared_token_source_state(binding_id, secret_store)?
     {
         return Err(anyhow!(
@@ -653,13 +672,6 @@ where
 }
 
 fn load_token_source_state_by_id_from_value(state: String) -> Result<Option<BindingTokenSource>> {
-    if state == REDACTED_PLACEHOLDER {
-        return Ok(Some(BindingTokenSource::Command {
-            command: state,
-            prepared: true,
-            needs_persist: false,
-        }));
-    }
     if !state.trim_start().starts_with('{') {
         return Ok(Some(parse_legacy_prepared_command_state(&state)?));
     }
@@ -1902,9 +1914,16 @@ mod tests {
     fn inspection_reacquires_redacted_provider_state_when_prepared_marker_exists() {
         let secrets = MemorySecretStore::new();
         let record = binding_record_with_provider("sso-jwt");
+        // Simulate the ReadOnly-inspection-store outcome: a state
+        // entry exists but the store won't hand over the plaintext.
+        // `mark_redacted` is the test-only equivalent of what
+        // ReadOnlyEncryptedFileSecretStore::get_read returns — it
+        // does NOT round-trip through the `"<redacted>"` string
+        // sentinel, which is the collision the typed SecretRead API
+        // was added to eliminate.
         secrets
-            .set(&token_source_state_id(&record.id), REDACTED_PLACEHOLDER)
-            .expect("state");
+            .mark_redacted(&token_source_state_id(&record.id))
+            .expect("mark redacted");
         secrets
             .set(
                 &token_source_prepared_id(&record.id),
