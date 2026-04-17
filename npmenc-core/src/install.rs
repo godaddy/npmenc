@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use enclaveapp_app_adapter::{BindingStore, SecretStore};
 
+use crate::atomic_write::atomic_write_preserving_mode;
 use crate::common::restore_previous_secret;
 use crate::config_path::resolve_effective_userconfig;
 use crate::management::validate_unique_auth_keys;
@@ -352,7 +353,7 @@ where
         );
         let changed = rewritten.contents != source;
         if changed {
-            fs::write(&path, &rewritten.contents)?;
+            atomic_write_preserving_mode(&path, rewritten.contents.as_bytes())?;
         }
         if let Err(error) = apply_install_state_changes(
             &pending_record_updates,
@@ -361,7 +362,7 @@ where
             secret_store,
         ) {
             if changed {
-                if let Err(restore_error) = fs::write(&path, &source) {
+                if let Err(restore_error) = atomic_write_preserving_mode(&path, source.as_bytes()) {
                     return Err(anyhow::anyhow!(
                         "{error}; additionally failed to restore original config at {}: {restore_error}",
                         path.display()

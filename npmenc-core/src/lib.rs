@@ -1,3 +1,4 @@
+pub mod atomic_write;
 pub mod cli_common;
 pub mod command_kind;
 pub mod common;
