@@ -15,6 +15,15 @@ npmenc-core = { path = "../npmenc-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Integration tests spawn the npmenc binary via assert_cmd. On macOS
+# CI (GitHub Actions `macos-latest`), SecItemAdd against the runner's
+# login keychain from an unsigned binary blocks on an ACL prompt that
+# never gets answered. Turning on enclaveapp-app-storage's `mock`
+# feature here makes cargo feature unification compile the mock path
+# during `cargo test`, so ENCLAVEAPP_MOCK_STORAGE=1 (set by the CI
+# workflow) routes through it. Release builds (no dev-deps) never
+# include the mock — see libenclaveapp enclaveapp-app-storage.
+enclaveapp-app-storage = { workspace = true, features = ["mock"] }
 
 [lints]
 workspace = true

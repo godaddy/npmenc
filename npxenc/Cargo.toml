@@ -15,6 +15,9 @@ npmenc-core = { path = "../npmenc-core" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# See npmenc/Cargo.toml for rationale. Same mock opt-in for the
+# npxenc integration tests.
+enclaveapp-app-storage = { workspace = true, features = ["mock"] }
 
 [lints]
 workspace = true
