@@ -412,6 +412,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -845,6 +846,7 @@ dependencies = [
  "clap",
  "dirs",
  "enclaveapp-app-adapter",
+ "enclaveapp-core",
  "fs4",
  "serde",
  "serde_json",
