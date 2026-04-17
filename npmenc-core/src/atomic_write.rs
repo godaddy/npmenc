@@ -9,7 +9,6 @@
 //! the same parent directory and then `rename`s it into place so the
 //! transition is observably atomic.
 
-use std::fs;
 use std::io::Write;
 use std::path::Path;
 
@@ -31,7 +30,7 @@ pub fn atomic_write_preserving_mode(path: &Path, contents: &[u8]) -> Result<()> 
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
 
     #[cfg(unix)]
-    let original_mode = fs::metadata(path).ok().map(|meta| {
+    let original_mode = std::fs::metadata(path).ok().map(|meta| {
         use std::os::unix::fs::PermissionsExt;
         meta.permissions().mode()
     });
@@ -49,7 +48,7 @@ pub fn atomic_write_preserving_mode(path: &Path, contents: &[u8]) -> Result<()> 
     #[cfg(unix)]
     if let Some(mode) = original_mode {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(temp.path(), fs::Permissions::from_mode(mode))
+        std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(mode))
             .with_context(|| format!("preserving mode on temp for {}", path.display()))?;
     }
 
@@ -63,6 +62,7 @@ pub fn atomic_write_preserving_mode(path: &Path, contents: &[u8]) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn writes_new_file() {
