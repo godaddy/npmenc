@@ -419,6 +419,7 @@ dependencies = [
 name = "enclaveapp-app-storage"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "enclaveapp-apple",
  "enclaveapp-bridge",
  "enclaveapp-core",
@@ -426,6 +427,8 @@ dependencies = [
  "enclaveapp-linux-tpm",
  "enclaveapp-windows",
  "enclaveapp-wsl",
+ "rand",
+ "sha2",
  "thiserror",
  "tracing",
 ]
@@ -443,6 +446,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
@@ -839,6 +843,7 @@ dependencies = [
  "anyhow",
  "clap",
  "enclaveapp-app-adapter",
+ "enclaveapp-app-storage",
  "enclaveapp-core",
  "npmenc-core",
  "tempfile",
@@ -868,6 +873,7 @@ dependencies = [
  "anyhow",
  "clap",
  "enclaveapp-app-adapter",
+ "enclaveapp-app-storage",
  "enclaveapp-core",
  "npmenc-core",
  "tempfile",
