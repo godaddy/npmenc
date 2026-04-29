@@ -40,6 +40,15 @@ pub enum Commands {
         #[command(subcommand)]
         command: RegistryCommands,
     },
+    /// Any subcommand we don't recognize is forwarded verbatim to npm/npx,
+    /// including its `--help`. So `npmenc whoami --help` shows
+    /// `npm whoami --help`, and `npmenc add lodash` runs `npm add lodash`,
+    /// without needing a `--` separator. The reserved npmenc subcommands
+    /// above (install, uninstall, token, registry) shadow npm's same-named
+    /// subcommands; route them to npm explicitly with a `--` separator,
+    /// e.g. `npmenc -- install lodash`.
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]
@@ -136,17 +145,26 @@ pub struct CommonCliOptions {
     /// the cost of breaking private-registry reads on `install` — opt-in
     /// only, never default. Always injects for npxenc.
     pub publish_only: bool,
-    pub args: Vec<String>,
 }
 
 pub fn run_cli(variant: &CliVariant, cli: CommonCliOptions) -> Result<ExitCode> {
-    if let Some(command) = cli.command {
-        run_command(command, cli.userconfig.as_deref(), cli.allow_unscoped_auth)?;
-        return Ok(ExitCode::SUCCESS);
-    }
+    // Anything that wasn't one of npmenc's reserved subcommands lands in
+    // Commands::External — including the explicit `--` bypass form
+    // (e.g. `npmenc -- install lodash` parses to External(["install",
+    // "lodash"]). When no subcommand is given we still run the wrapper
+    // (e.g. `npmenc` with just options prints npm's help via the wrapped
+    // execution path).
+    let pass_through_args: Vec<String> = match cli.command {
+        Some(Commands::External(args)) => args,
+        Some(other) => {
+            run_command(other, cli.userconfig.as_deref(), cli.allow_unscoped_auth)?;
+            return Ok(ExitCode::SUCCESS);
+        }
+        None => Vec::new(),
+    };
 
-    let publish_only_active =
-        cli.publish_only && !subcommand_needs_registry_auth(variant.command_kind, &cli.args);
+    let publish_only_active = cli.publish_only
+        && !subcommand_needs_registry_auth(variant.command_kind, &pass_through_args);
 
     let invocation = WrapperInvocation {
         userconfig_override: cli.userconfig,
@@ -155,7 +173,7 @@ pub fn run_cli(variant: &CliVariant, cli: CommonCliOptions) -> Result<ExitCode> 
         explicit_bin: cli.explicit_bin,
         strict: cli.strict,
         allow_unscoped_auth: cli.allow_unscoped_auth,
-        args: cli.args,
+        args: pass_through_args,
     };
     let inspection_only = cli.dry_run || cli.print_effective_config;
     let binding_store = JsonFileBindingStore::for_app("npmenc")?;
@@ -469,6 +487,9 @@ fn run_command(
         Commands::Registry {
             command: registry_command,
         } => run_registry_command(registry_command),
+        Commands::External(_) => unreachable!(
+            "External is intercepted in run_cli and routed to the pass-through wrapper path"
+        ),
     }
 }
 
@@ -729,6 +750,98 @@ fn validate_non_empty_secret(binding: &RegistryBinding, secret: String) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Minimal test wrapper around the shared `Commands` enum so we can
+    /// exercise clap's parsing of the curated subcommands and the
+    /// `External` pass-through variant without depending on the binary
+    /// crates' full Cli struct.
+    #[derive(Debug, Parser)]
+    #[command(no_binary_name = true)]
+    struct TestCli {
+        #[command(subcommand)]
+        command: Option<Commands>,
+    }
+
+    fn parse_test(args: &[&str]) -> TestCli {
+        TestCli::try_parse_from(args).expect("clap parse succeeded")
+    }
+
+    fn external_args_of(cli: TestCli) -> Vec<String> {
+        if let Some(Commands::External(args)) = cli.command {
+            args
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn external_subcommand_captures_unknown_first_positional() {
+        let args = external_args_of(parse_test(&["whoami"]));
+        assert_eq!(args, vec!["whoami".to_string()]);
+    }
+
+    #[test]
+    fn external_subcommand_captures_trailing_flags() {
+        // `npmenc whoami --json --help` — every token after the unknown
+        // subcommand name gets captured, including --help and any flags.
+        // clap stops parsing as parent options once the external variant
+        // is matched.
+        let args = external_args_of(parse_test(&["whoami", "--json", "--help"]));
+        assert_eq!(
+            args,
+            vec![
+                "whoami".to_string(),
+                "--json".to_string(),
+                "--help".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn double_dash_separator_routes_through_external() {
+        // `npmenc -- install lodash` — the `--` bypass for reserved
+        // subcommand names. clap treats the tokens after `--` as the
+        // start of an external subcommand, so `install` (which is a
+        // reserved npmenc subcommand otherwise) reaches npm verbatim.
+        let args = external_args_of(parse_test(&["--", "install", "lodash"]));
+        assert_eq!(args, vec!["install".to_string(), "lodash".to_string()]);
+    }
+
+    #[test]
+    fn reserved_install_subcommand_still_matches_curated_path() {
+        let cli = parse_test(&["install"]);
+        assert!(matches!(cli.command, Some(Commands::Install(_))));
+    }
+
+    #[test]
+    fn reserved_token_subcommand_still_matches_curated_path() {
+        let cli = parse_test(&["token", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Token {
+                command: TokenCommands::List
+            })
+        ));
+    }
+
+    #[test]
+    fn reserved_subcommand_with_extra_positional_does_not_silently_pass_through() {
+        // `npmenc install lodash` is ambiguous: `install` is reserved by
+        // npmenc as a no-arg setup command, but most users typing it mean
+        // `npm install lodash`. Rather than guessing, clap surfaces the
+        // collision as an error so users learn to use `--` to bypass.
+        let result = TestCli::try_parse_from(["install", "lodash"]);
+        assert!(result.is_err(), "expected clap error, got: {result:?}");
+    }
+
+    #[test]
+    fn no_subcommand_is_none_not_external() {
+        // Bare `npmenc` (no subcommand, no args) yields command = None,
+        // which falls through to the wrapped-execution path with empty
+        // args (so npm prints its own help).
+        let cli = parse_test(&[]);
+        assert!(cli.command.is_none());
+    }
 
     #[test]
     fn cli_variant_npm_has_correct_fields() {

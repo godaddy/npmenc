@@ -64,9 +64,6 @@ struct Cli {
     /// reads on `install`. Opt-in; never default.
     #[arg(long)]
     publish_only: bool,
-
-    #[arg(last = true)]
-    args: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -89,7 +86,6 @@ fn main() -> ExitCode {
         allow_unscoped_auth: cli.allow_unscoped_auth,
         auto_install: cli.auto_install,
         publish_only: cli.publish_only,
-        args: cli.args,
     };
     match npmenc_core::cli_common::run_cli(&variant, options) {
         Ok(code) => code,

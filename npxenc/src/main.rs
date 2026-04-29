@@ -57,9 +57,6 @@ struct Cli {
 
     #[arg(long)]
     auto_install: bool,
-
-    #[arg(last = true)]
-    args: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -84,7 +81,6 @@ fn main() -> ExitCode {
         // npxenc does not expose --publish-only: npx invokes package code
         // whose registry-auth needs we cannot predict, so always inject.
         publish_only: false,
-        args: cli.args,
     };
     match npmenc_core::cli_common::run_cli(&variant, options) {
         Ok(code) => code,
